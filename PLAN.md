@@ -23,6 +23,7 @@ Task board for the Harness UI work. Agents: read this file and `README.md`, then
   - Server: `cd server && bunx tsc --noEmit`
   - Rust: `cd app/src-tauri && cargo check`
 - **Seeing it:** `bun run dev` from `harness/` (server with --watch + `tauri dev`). The UI also runs in a browser at http://localhost:1420 (only port 1420 passes CORS). Screenshots: only for visual changes, shrink with `sips -Z 800` before reading.
+- **Visual check without the app:** Playwright WebKit is installed (`uvx --from playwright python script.py`). Render a throwaway fixture page under `app/` via `bunx vite --port 1420`, screenshot it, shrink with `sips`, then delete the fixture. This caught a broken CSS selector that typecheck/build can't.
 - **Ship:** `bun run build` from `harness/`, then replace `/Applications/Harness.app` with `app/src-tauri/target/release/bundle/macos/Harness.app` and `open` it. Check `curl 127.0.0.1:8787/api/health` returns 200.
 
 ## Map
