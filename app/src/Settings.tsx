@@ -1,12 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type Memory, type Preset, type Settings } from "./api";
 import { Icon, type IconName } from "./icons";
-import { NativeControl } from "./NativeControl";
 
 export type Pane = "general" | "models" | "tools" | "memory" | "voice";
-// True while the sheet is open (including its opening animation): native controls go to their
-// final spots straight away and fade in with it, and fade out as soon as it starts closing.
-const Live = createContext(false);
+
 const PANES: { id: Pane; label: string; icon: IconName; keywords: string }[] = [
   { id: "general", label: "General", icon: "general", keywords: "model idle unload think budget system prompt memory" },
   { id: "models", label: "Models", icon: "models", keywords: "model size speed humaneval qwen mtp" },
@@ -32,9 +29,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
   const [offline, setOffline] = useState(false);
   const [q, setQ] = useState("");
   const [phase, setPhase] = useState<"enter" | "open" | "settled" | "closing">("enter");
-  // Native controls join once the sheet is mostly in place (the spring is ~90% done by then),
-  // so they never show before the sheet itself.
-  const [nativeReady, setNativeReady] = useState(false);
+
   const panelRef = useRef<HTMLDivElement>(null);
   // Back/forward like System Settings: a history of panes and a cursor.
   const [nav, setNav] = useState<{ stack: Pane[]; at: number }>(() => ({ stack: [props.pane], at: 0 }));
@@ -52,11 +47,11 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
     boot();
     // Two frames so the starting styles are painted before the transition.
     requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
-    const t = setTimeout(() => setNativeReady(true), 240);
+
     // With Reduce Motion there's no transform transition to wait for.
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) setTimeout(() => setPhase((p) => (p === "open" ? "settled" : p)), 200);
     panelRef.current?.focus();
-    return () => void ((alive = false), clearTimeout(t));
+    return () => void (alive = false);
   }, []);
 
   useEffect(() => {
@@ -87,7 +82,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
 
   const title = PANES.find((p) => p.id === pane)!.label;
   const s = settings;
-  const live = nativeReady && (phase === "open" || phase === "settled");
+
 
   return (
     <div className="modal-root" data-phase={phase}>
@@ -99,7 +94,6 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
         aria-label="Settings"
         tabIndex={-1}
         className="settings-modal"
-        data-native-root
         onTransitionEnd={(e) => {
           if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
           if (phase === "open") setPhase("settled");
@@ -107,7 +101,10 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
         }}
       >
         <nav className="settings-nav" aria-label="Settings sections">
-          <NativeControl kind="search" label="Search settings" placeholder="Search" text={q} onText={setQ} active={live} style={{ marginBottom: 8 }} />
+          <label className="search">
+            <Icon name="search" size={13} stroke={2.2} />
+            <input aria-label="Search settings" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+          </label>
           {visible.map((p) => (
             <button key={p.id} className={"nav-item" + (p.id === pane ? " current" : "")} aria-current={p.id === pane ? "page" : undefined} onClick={() => go(p.id)}>
               <Icon name={p.icon} size={15} />
@@ -118,33 +115,23 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
 
         <main className="settings-main">
           <div className="settings-toolbar">
-            <NativeControl
-              kind="segmented"
-              label="Back and forward"
-              symbols={["chevron.left", "chevron.right"]}
-              enabled={[nav.at > 0, nav.at < nav.stack.length - 1]}
-              onSegment={(i) => setNav((n) => ({ ...n, at: Math.max(0, Math.min(n.stack.length - 1, n.at + (i === 0 ? -1 : 1))) }))}
-              active={live}
-              fallback={
-                <div className="history">
-                  <button className="icon-btn" aria-label="Back" disabled={nav.at === 0} onClick={() => setNav((n) => ({ ...n, at: n.at - 1 }))}>
-                    <Icon name="chevronLeft" size={12} stroke={2.8} />
-                  </button>
-                  <button className="icon-btn" aria-label="Forward" disabled={nav.at === nav.stack.length - 1} onClick={() => setNav((n) => ({ ...n, at: n.at + 1 }))}>
-                    <Icon name="chevronRight" size={12} stroke={2.8} />
-                  </button>
-                </div>
-              }
-            />
+            <div className="history">
+              <button className="icon-btn" aria-label="Back" disabled={nav.at === 0} onClick={() => setNav((n) => ({ ...n, at: n.at - 1 }))}>
+                <Icon name="chevronLeft" size={12} stroke={2.8} />
+              </button>
+              <button className="icon-btn" aria-label="Forward" disabled={nav.at === nav.stack.length - 1} onClick={() => setNav((n) => ({ ...n, at: n.at + 1 }))}>
+                <Icon name="chevronRight" size={12} stroke={2.8} />
+              </button>
+            </div>
             <h1>{title}</h1>
             <button className="icon-btn close" aria-label="Close settings" title="Close (Esc)" onClick={props.onClose}>
               <Icon name="close" size={11} stroke={2.4} />
             </button>
           </div>
 
-          <div className="settings-scroll" data-native-clip>
+          <div className="settings-scroll">
             <div className="settings-content" key={pane}>
-              <Live.Provider value={live}>
+              <>
                 {offline && <div className="banner">Waiting for the harness server on 127.0.0.1:8787…</div>}
                 {s && (
                   <>
@@ -157,7 +144,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
                     {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
                   </>
                 )}
-              </Live.Provider>
+              </>
             </div>
           </div>
         </main>
@@ -166,26 +153,37 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
   );
 }
 
-// The system NSPopUpButton (see NativeControl).
+// Popup button: a <select> (its menu is the real macOS menu), drawn like NSPopUpButton.
 function Popup<T extends string | number>(props: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
-  const live = useContext(Live);
-  const index = Math.max(0, props.options.findIndex((o) => o.value === props.value));
   return (
-    <NativeControl
-      kind="popup"
-      label={props.label}
-      items={props.options.map((o) => o.label)}
-      value={index}
-      active={live}
-      onChange={(i) => props.options[i] && props.onChange(props.options[i].value)}
-    />
+    <span className="popup">
+      <select
+        aria-label={props.label}
+        value={String(props.value)}
+        onChange={(e) => {
+          const hit = props.options.find((o) => String(o.value) === e.target.value);
+          if (hit) props.onChange(hit.value);
+        }}
+      >
+        {props.options.map((o) => (
+          <option key={String(o.value)} value={String(o.value)}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <svg width="9" height="12" viewBox="0 0 9 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M1.5 4.5L4.5 1.5 7.5 4.5M1.5 7.5L4.5 10.5 7.5 7.5" />
+      </svg>
+    </span>
   );
 }
 
-// The system NSSwitch (see NativeControl).
 function Switch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }) {
-  const live = useContext(Live);
-  return <NativeControl kind="switch" label={label} value={on} active={live} onChange={onChange} />;
+  return (
+    <button role="switch" aria-checked={on} aria-label={label} className={"switch" + (on ? " on" : "")} onClick={() => onChange(!on)}>
+      <span />
+    </button>
+  );
 }
 
 function ModelGroup({ s, presets, save }: { s: Settings; presets: Preset[]; save: (p: Partial<Settings>) => void }) {
@@ -230,7 +228,6 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
   const size = p?.info.size?.replace(" · 4-bit", "");
   const idle = IDLE_OPTIONS.some((o) => o.value === s.idleMinutes) ? IDLE_OPTIONS : [...IDLE_OPTIONS, { value: s.idleMinutes, label: `After ${s.idleMinutes} minutes` }];
   const max = 4096;
-  const live = useContext(Live);
   const budget = Math.min(s.thinkingBudget, max);
   return (
     <section className="group" aria-label="Runtime">
@@ -253,21 +250,20 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
           <span>Thinking budget</span>
           <span>{budget === 0 ? "Off" : `${budget / 1024}K tokens`}</span>
         </div>
-        {/* The system NSSlider with tick marks (see NativeControl). */}
-        <NativeControl
-          kind="slider"
-          label="Thinking budget"
+        <input
+          aria-label="Thinking budget"
+          className="tahoe"
+          type="range"
           min={0}
           max={max}
           step={1024}
-          ticks={5}
           value={budget}
-          active={live}
-          onChange={(v) => {
-            const snapped = Math.round(v / 1024) * 1024;
-            if (snapped !== budget) save({ thinkingBudget: snapped });
-          }}
+          onChange={(e) => save({ thinkingBudget: Number(e.target.value) })}
+          style={{ ["--fill" as string]: `${(budget / max) * 100}%` }}
         />
+        <div className="ticks" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((i) => <span key={i} className={i * 1024 <= budget ? "on" : ""} />)}
+        </div>
         {p?.mtp && <div className="sub">Not applied to MTP models yet: mlx-vlm refuses a budget with a speculative drafter.</div>}
       </div>
     </section>
@@ -299,7 +295,6 @@ function SystemPrompt({ value, save }: { value: string; save: (p: Partial<Settin
 }
 
 function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories: (m: Memory[]) => void }) {
-  const live = useContext(Live);
   const [selected, setSelected] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -354,23 +349,13 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
           {!adding && memories.length === 0 && <div className="fact empty">No facts yet.</div>}
         </div>
         <div className="list-footer">
-          <NativeControl
-            kind="segmented"
-            label="Add or remove a fact"
-            symbols={["plus", "minus"]}
-            segmentStyle="smallSquare"
-            enabled={[true, selected != null]}
-            onSegment={(i) => (i === 0 ? setAdding(true) : remove())}
-            active={live}
-            style={{ width: 56, height: 24 }}
-            fallback={
-              <>
-                <button aria-label="Add fact" onClick={() => setAdding(true)}>+</button>
-                <span aria-hidden="true" />
-                <button aria-label="Remove selected fact" disabled={selected == null} onClick={remove}>−</button>
-              </>
-            }
-          />
+          <button aria-label="Add fact" title="Add fact" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={12} stroke={2} />
+          </button>
+          <span aria-hidden="true" />
+          <button aria-label="Remove selected fact" title="Remove selected fact" disabled={selected == null} onClick={remove}>
+            <Icon name="minus" size={12} stroke={2} />
+          </button>
         </div>
       </div>
       <div className="footnote">Facts saved here are added to chats once memory ships (Milestone 3).</div>

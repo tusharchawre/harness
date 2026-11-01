@@ -6,8 +6,6 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewWindow, Wry};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
-mod native_controls;
-
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 // The bun sidecar holds all agent logic; Rust only starts and stops it,
@@ -165,7 +163,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, show_main_window, reveal, open_url, native_controls::native_control])
+        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, show_main_window, reveal, open_url])
         .setup(|app| {
             build_menus(app.handle())?;
             if let Some(main) = app.get_webview_window("main") {

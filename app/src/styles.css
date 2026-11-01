@@ -37,6 +37,8 @@
   --send-fg: #000;
   --control: rgba(255, 255, 255, 0.12);
   --control-edge: inset 0 0.5px 0 rgba(255, 255, 255, 0.15);
+  --switch-off: rgba(255, 255, 255, 0.16);
+  --track: rgba(255, 255, 255, 0.14);
 
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   color-scheme: dark;
@@ -77,6 +79,8 @@
     --send-fg: #fff;
     --control: rgba(255, 255, 255, 0.9);
     --control-edge: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.06);
+    --switch-off: rgba(0, 0, 0, 0.12);
+    --track: rgba(0, 0, 0, 0.1);
     color-scheme: light;
   }
 }
@@ -328,7 +332,6 @@ input, textarea, select { font: inherit; color: var(--text); }
 .nav-item.current { background: var(--selected); }
 .settings-toolbar .close { width: 28px; height: 28px; border-radius: 7px; color: var(--secondary); }
 .settings-toolbar .close:hover { background: var(--selected); color: var(--text); }
-.native-slot { flex-shrink: 0; }
 .settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .settings-toolbar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 0 10px 0 12px; }
 .settings-toolbar .history { display: flex; gap: 2px; color: var(--muted); }
@@ -353,6 +356,7 @@ input, textarea, select { font: inherit; color: var(--text); }
 .footnote { margin-left: 14px; font-size: 11px; color: var(--muted); }
 
 .popup { position: relative; display: flex; align-items: center; color: var(--text-3); }
+.popup select:hover { filter: brightness(1.15); }
 .popup select { appearance: none; -webkit-appearance: none; height: 24px; padding: 0 28px 0 10px; border: 0; border-radius: 6px; background: var(--control); box-shadow: var(--control-edge); outline: none; }
 .popup svg { position: absolute; right: 9px; pointer-events: none; }
 
@@ -360,7 +364,26 @@ input, textarea, select { font: inherit; color: var(--text); }
 .group .slider-row { flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 14px 12px; }
 .slider-head { display: flex; justify-content: space-between; align-items: baseline; }
 .slider-head span:last-child { font-size: 12px; color: var(--secondary); }
-.slider-row input[type="range"] { width: 100%; margin: 4px 0 0; }
+/* Switch, slider: drawn like the macOS 26 controls (pill knob, thin track, tick dots). */
+.switch { width: 38px; height: 22px; padding: 2px; flex-shrink: 0; border-radius: 999px; background: var(--switch-off); display: flex; transition: background 180ms ease; }
+.switch span { width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(0, 0, 0, 0.06); transition: transform 220ms cubic-bezier(0.3, 0.7, 0.2, 1.15), width 160ms ease; }
+.switch:active span { width: 22px; }
+.switch.on { background: var(--accent); }
+.switch.on span { transform: translateX(16px); }
+.switch.on:active span { transform: translateX(12px); }
+input.tahoe {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 10px 0 4px; border-radius: 999px; outline: none; cursor: default;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--track) var(--fill));
+}
+input.tahoe::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 24px; height: 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.95);
+  border: 0.5px solid rgba(255, 255, 255, 0.6); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 140ms ease;
+}
+input.tahoe:active::-webkit-slider-thumb { transform: scale(1.12); }
+@media (prefers-color-scheme: light) { input.tahoe::-webkit-slider-thumb { background: #fff; border-color: rgba(0, 0, 0, 0.1); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22); } }
+.ticks { display: flex; justify-content: space-between; padding: 0 11px; }
+.ticks span { width: 3px; height: 3px; border-radius: 999px; background: var(--dot); }
 
 textarea.prompt { width: 100%; padding: 10px 14px; border: 1px solid var(--separator); border-radius: 12px; background: var(--group); line-height: 1.55; resize: vertical; outline: none; user-select: text; -webkit-user-select: text; }
 textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
@@ -374,6 +397,6 @@ textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, tran
 .fact.empty { color: var(--muted); }
 .fact.editing input { flex: 1; border: 0; background: transparent; outline: none; padding: 0; user-select: text; -webkit-user-select: text; }
 .list-footer { height: 30px; border-top: 1px solid var(--separator); display: flex; align-items: center; padding: 0 6px; }
-.list-footer button { width: 26px; height: 22px; color: var(--text-3); font-size: 15px; border-radius: 5px; }
+.list-footer button { width: 26px; height: 22px; color: var(--text-3); border-radius: 5px; display: flex; align-items: center; justify-content: center; }
 .list-footer button:hover:not(:disabled) { background: var(--hover); }
 .list-footer span { width: 1px; height: 14px; background: var(--separator-strong); }
