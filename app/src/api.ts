@@ -49,6 +49,7 @@ export const api = {
   createChat: (preset: string) => json<Chat>("/api/chats", { method: "POST", body: JSON.stringify({ preset }) }),
   setChatPreset: (id: string, preset: string) => json<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ preset }) }),
   renameChat: (id: string, title: string) => json<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  truncate: (id: string, from: number) => json(`/api/chats/${id}/truncate`, { method: "POST", body: JSON.stringify({ from }) }),
   file: (path: string) => json<{ path: string; content: string }>(`/api/file?path=${encodeURIComponent(path)}`),
   memories: () => json<Memory[]>("/api/memories"),
   addMemory: (text: string) => json<Memory>("/api/memories", { method: "POST", body: JSON.stringify({ text }) }),
@@ -61,9 +62,11 @@ export const api = {
   unloadModel: () => json<ModelState>("/api/model/unload", { method: "POST" }),
 };
 
-export function watchModel(onState: (s: ModelState) => void): () => void {
+// Model state, plus chats changed in the background (the generated title after a first reply).
+export function watchModel(onState: (s: ModelState) => void, onChat?: (c: Chat) => void): () => void {
   const es = new EventSource(`${API}/api/model/events`);
   es.addEventListener("state", (e) => onState(JSON.parse((e as MessageEvent).data)));
+  es.addEventListener("chat", (e) => onChat?.(JSON.parse((e as MessageEvent).data)));
   return () => es.close();
 }
 

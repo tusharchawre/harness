@@ -72,6 +72,7 @@ export const chats = {
 };
 
 export const messages = {
+  deleteFrom: (chatId: string, fromId: number) => db.query("DELETE FROM messages WHERE chat_id = ? AND id >= ?").run(chatId, fromId),
   list: (chatId: string) =>
     db.query<Message, [string]>("SELECT * FROM messages WHERE chat_id = ? ORDER BY id").all(chatId),
   add(m: Omit<Message, "id" | "created_at" | "thinking_ms" | "tools" | "sources"> & Partial<Pick<Message, "thinking_ms" | "tools" | "sources">>): Message {

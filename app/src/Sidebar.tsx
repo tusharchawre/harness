@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Chat } from "./api";
 import { Icon } from "./icons";
 import { openSettings } from "./native";
@@ -37,6 +38,7 @@ type MenuState = { id: string; x: number; y: number };
 export function Sidebar(props: {
   chats: Chat[];
   chatId: string | null;
+  retitled: string | null;
   hidden: boolean;
   onPick: (id: string) => void;
   onNew: () => void;
@@ -88,12 +90,17 @@ export function Sidebar(props: {
                   onKeyDown={(e) => e.key === "Enter" && props.onPick(c.id)}
                   onContextMenu={(e) => (e.preventDefault(), setMenu({ id: c.id, x: e.clientX, y: e.clientY }))}
                 >
-                  <span>{c.title}</span>
+                  <span key={c.title}>
+                    {c.id === props.retitled
+                      ? c.title.split(/(?<=\s)/).map((w, i) => <span key={i} className="w" style={{ "--d": `${i * 60}ms` } as React.CSSProperties}>{w}</span>)
+                      : c.title}
+                  </span>
                   <button
                     className="more"
                     aria-label="Chat options"
                     aria-haspopup="menu"
                     aria-expanded={menu?.id === c.id}
+                    onMouseDown={(e) => e.stopPropagation()} // else the menu's outside-click closes it and this click reopens it
                     onClick={(e) => (e.stopPropagation(), menu?.id === c.id ? setMenu(null) : openMenu(c.id, e.currentTarget))}
                   >
                     <Icon name="more" size={14} />
@@ -174,13 +181,16 @@ export function ContextMenu(props: { x: number; y: number; onClose: () => void; 
   // Keep it inside the window.
   const left = Math.min(props.x, window.innerWidth - 176);
   const top = Math.min(props.y, window.innerHeight - 16 - props.items.length * 26);
-  return (
+  // Portaled to <body>: the sidebar's backdrop-filter makes it the containing block and its own
+  // stacking context, so in place the menu was offset and its overhang sat under the main pane.
+  return createPortal(
     <div ref={ref} role="menu" className="ctx-menu" style={{ left, top }}>
       {props.items.map((it) => (
         <button key={it.label} role="menuitem" className={"item" + (it.destructive ? " destructive" : "")} onClick={() => (props.onClose(), it.run())}>
           {it.label}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

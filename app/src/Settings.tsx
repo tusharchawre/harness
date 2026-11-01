@@ -61,7 +61,8 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
   }, [props.closing]);
 
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+    // Fields that use Esc themselves (renaming a fact) call preventDefault.
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && props.onClose();
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
   }, [props.onClose]);
@@ -401,7 +402,7 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
                 onBlur={add}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") add();
-                  if (e.key === "Escape") (setAdding(false), setDraft(""));
+                  if (e.key === "Escape") (e.preventDefault(), setAdding(false), setDraft(""));
                 }}
               />
             </div>
