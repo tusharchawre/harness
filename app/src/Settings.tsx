@@ -186,6 +186,86 @@ function Switch({ on, label, onChange }: { on: boolean; label: string; onChange:
   );
 }
 
+// Follows the pointer smoothly while dragging; on release it glides to the nearest tick
+// and only then saves. Arrow keys still move tick by tick.
+function SnapSlider({ label, value, max, step, onCommit }: { label: string; value: number; max: number; step: number; onCommit: (v: number) => void }) {
+  const [pos, setPos] = useState(value);
+  const dragging = useRef(false);
+  const anim = useRef(0);
+  const posRef = useRef(value);
+  posRef.current = pos;
+
+  useEffect(() => {
+    if (!dragging.current) glide(value, false);
+  }, [value]);
+  useEffect(() => () => cancelAnimationFrame(anim.current), []);
+
+  function glide(to: number, commit: boolean) {
+    cancelAnimationFrame(anim.current);
+    const from = posRef.current;
+    if (from === to || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPos(to);
+      if (commit && to !== value) onCommit(to);
+      return;
+    }
+    const t0 = performance.now();
+    const dur = 260;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - t, 3); // ease-out
+      setPos(from + (to - from) * e);
+      if (t < 1) anim.current = requestAnimationFrame(tick);
+      else if (commit && to !== value) onCommit(to);
+    };
+    anim.current = requestAnimationFrame(tick);
+  }
+
+  const release = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    glide(Math.round(posRef.current / step) * step, true);
+  };
+  const target = Math.round(pos / step) * step;
+  const ticks = Math.round(max / step) + 1;
+
+  return (
+    <>
+      <span className="slider-value" aria-live="polite">{target === 0 ? "Off" : `${target / 1024}K tokens`}</span>
+      <input
+        aria-label={label}
+        aria-valuetext={target === 0 ? "Off" : `${target / 1024}K tokens`}
+        className="tahoe"
+        type="range"
+        min={0}
+        max={max}
+        step="any"
+        value={pos}
+        onPointerDown={() => {
+          cancelAnimationFrame(anim.current);
+          dragging.current = true;
+        }}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onBlur={release}
+        onKeyDown={(e) => {
+          const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+          if (!dir) return;
+          e.preventDefault();
+          const next = Math.max(0, Math.min(max, target + dir * step));
+          glide(next, true);
+        }}
+        onChange={(e) => {
+          if (dragging.current) setPos(Number(e.target.value));
+        }}
+        style={{ ["--fill" as string]: `${(pos / max) * 100}%` }}
+      />
+      <div className="ticks" aria-hidden="true">
+        {Array.from({ length: ticks }, (_, i) => <span key={i} className={i * step <= pos + 1 ? "on" : ""} />)}
+      </div>
+    </>
+  );
+}
+
 function ModelGroup({ s, presets, save }: { s: Settings; presets: Preset[]; save: (p: Partial<Settings>) => void }) {
   const p = presets.find((x) => x.id === s.defaultModel) ?? presets[0];
   return (
@@ -248,22 +328,8 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
       <div className="row slider-row">
         <div className="slider-head">
           <span>Thinking budget</span>
-          <span>{budget === 0 ? "Off" : `${budget / 1024}K tokens`}</span>
         </div>
-        <input
-          aria-label="Thinking budget"
-          className="tahoe"
-          type="range"
-          min={0}
-          max={max}
-          step={1024}
-          value={budget}
-          onChange={(e) => save({ thinkingBudget: Number(e.target.value) })}
-          style={{ ["--fill" as string]: `${(budget / max) * 100}%` }}
-        />
-        <div className="ticks" aria-hidden="true">
-          {[0, 1, 2, 3, 4].map((i) => <span key={i} className={i * 1024 <= budget ? "on" : ""} />)}
-        </div>
+        <SnapSlider label="Thinking budget" value={budget} max={max} step={1024} onCommit={(v) => save({ thinkingBudget: v })} />
         {p?.mtp && <div className="sub">Not applied to MTP models yet: mlx-vlm refuses a budget with a speculative drafter.</div>}
       </div>
     </section>
