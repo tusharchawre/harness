@@ -4,8 +4,9 @@ import { Icon, type IconName } from "./icons";
 import { NativeControl } from "./NativeControl";
 
 export type Pane = "general" | "models" | "tools" | "memory" | "voice";
-// True once the sheet has finished animating in: native controls only float over a still page.
-const Settled = createContext(false);
+// True while the sheet is open (including its opening animation): native controls go to their
+// final spots straight away and fade in with it, and fade out as soon as it starts closing.
+const Live = createContext(false);
 const PANES: { id: Pane; label: string; icon: IconName; keywords: string }[] = [
   { id: "general", label: "General", icon: "general", keywords: "model idle unload think budget system prompt memory" },
   { id: "models", label: "Models", icon: "models", keywords: "model size speed humaneval qwen mtp" },
@@ -82,6 +83,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
 
   const title = PANES.find((p) => p.id === pane)!.label;
   const s = settings;
+  const live = phase === "open" || phase === "settled";
 
   return (
     <div className="modal-root" data-phase={phase}>
@@ -93,6 +95,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
         aria-label="Settings"
         tabIndex={-1}
         className="settings-modal"
+        data-native-root
         onTransitionEnd={(e) => {
           if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
           if (phase === "open") setPhase("settled");
@@ -100,10 +103,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
         }}
       >
         <nav className="settings-nav" aria-label="Settings sections">
-          <label className="search">
-            <Icon name="search" size={13} stroke={2.2} />
-            <input aria-label="Search settings" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
-          </label>
+          <NativeControl kind="search" label="Search settings" placeholder="Search" text={q} onText={setQ} active={live} style={{ marginBottom: 8 }} />
           {visible.map((p) => (
             <button key={p.id} className={"nav-item" + (p.id === pane ? " current" : "")} aria-current={p.id === pane ? "page" : undefined} onClick={() => go(p.id)}>
               <Icon name={p.icon} size={15} />
@@ -114,14 +114,24 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
 
         <main className="settings-main">
           <div className="settings-toolbar">
-            <div className="history">
-              <button className="icon-btn" aria-label="Back" disabled={nav.at === 0} onClick={() => setNav((n) => ({ ...n, at: n.at - 1 }))}>
-                <Icon name="chevronLeft" size={12} stroke={2.8} />
-              </button>
-              <button className="icon-btn" aria-label="Forward" disabled={nav.at === nav.stack.length - 1} onClick={() => setNav((n) => ({ ...n, at: n.at + 1 }))}>
-                <Icon name="chevronRight" size={12} stroke={2.8} />
-              </button>
-            </div>
+            <NativeControl
+              kind="segmented"
+              label="Back and forward"
+              symbols={["chevron.left", "chevron.right"]}
+              enabled={[nav.at > 0, nav.at < nav.stack.length - 1]}
+              onSegment={(i) => setNav((n) => ({ ...n, at: Math.max(0, Math.min(n.stack.length - 1, n.at + (i === 0 ? -1 : 1))) }))}
+              active={live}
+              fallback={
+                <div className="history">
+                  <button className="icon-btn" aria-label="Back" disabled={nav.at === 0} onClick={() => setNav((n) => ({ ...n, at: n.at - 1 }))}>
+                    <Icon name="chevronLeft" size={12} stroke={2.8} />
+                  </button>
+                  <button className="icon-btn" aria-label="Forward" disabled={nav.at === nav.stack.length - 1} onClick={() => setNav((n) => ({ ...n, at: n.at + 1 }))}>
+                    <Icon name="chevronRight" size={12} stroke={2.8} />
+                  </button>
+                </div>
+              }
+            />
             <h1>{title}</h1>
             <button className="icon-btn close" aria-label="Close settings" title="Close (Esc)" onClick={props.onClose}>
               <Icon name="close" size={11} stroke={2.4} />
@@ -130,7 +140,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
 
           <div className="settings-scroll" data-native-clip>
             <div className="settings-content" key={pane}>
-              <Settled.Provider value={phase === "settled"}>
+              <Live.Provider value={live}>
                 {offline && <div className="banner">Waiting for the harness server on 127.0.0.1:8787…</div>}
                 {s && (
                   <>
@@ -143,7 +153,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
                     {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
                   </>
                 )}
-              </Settled.Provider>
+              </Live.Provider>
             </div>
           </div>
         </main>
@@ -152,34 +162,26 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
   );
 }
 
-function Popup<T extends string | number>(props: { id: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+// The system NSPopUpButton (see NativeControl).
+function Popup<T extends string | number>(props: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  const live = useContext(Live);
+  const index = Math.max(0, props.options.findIndex((o) => o.value === props.value));
   return (
-    <span className="popup">
-      <select
-        id={props.id}
-        value={String(props.value)}
-        onChange={(e) => {
-          const hit = props.options.find((o) => String(o.value) === e.target.value);
-          if (hit) props.onChange(hit.value);
-        }}
-      >
-        {props.options.map((o) => (
-          <option key={String(o.value)} value={String(o.value)}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <svg width="9" height="12" viewBox="0 0 9 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M1.5 4.5L4.5 1.5 7.5 4.5M1.5 7.5L4.5 10.5 7.5 7.5" />
-      </svg>
-    </span>
+    <NativeControl
+      kind="popup"
+      label={props.label}
+      items={props.options.map((o) => o.label)}
+      value={index}
+      active={live}
+      onChange={(i) => props.options[i] && props.onChange(props.options[i].value)}
+    />
   );
 }
 
 // The system NSSwitch (see NativeControl).
 function Switch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }) {
-  const settled = useContext(Settled);
-  return <NativeControl kind="switch" label={label} value={on ? 1 : 0} active={settled} onChange={(v) => onChange(v >= 0.5)} />;
+  const live = useContext(Live);
+  return <NativeControl kind="switch" label={label} value={on} active={live} onChange={onChange} />;
 }
 
 function ModelGroup({ s, presets, save }: { s: Settings; presets: Preset[]; save: (p: Partial<Settings>) => void }) {
@@ -187,11 +189,11 @@ function ModelGroup({ s, presets, save }: { s: Settings; presets: Preset[]; save
   return (
     <section className="group" aria-label="Model">
       <div className="row">
-        <label htmlFor="model" className="grow">
+        <div className="grow">
           Model
           <div className="sub">Used for new chats. Each chat can switch from the title bar.</div>
-        </label>
-        <Popup id="model" value={s.defaultModel} options={presets.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => save({ defaultModel: v })} />
+        </div>
+        <Popup label="Model" value={s.defaultModel} options={presets.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => save({ defaultModel: v })} />
       </div>
       <div className="info"><span>Size in memory</span><span>{p?.info.size ?? "—"}</span></div>
       <div className="info"><span>Speed</span><span>{p?.info.speed ?? "—"}</span></div>
@@ -224,16 +226,16 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
   const size = p?.info.size?.replace(" · 4-bit", "");
   const idle = IDLE_OPTIONS.some((o) => o.value === s.idleMinutes) ? IDLE_OPTIONS : [...IDLE_OPTIONS, { value: s.idleMinutes, label: `After ${s.idleMinutes} minutes` }];
   const max = 4096;
-  const settled = useContext(Settled);
+  const live = useContext(Live);
   const budget = Math.min(s.thinkingBudget, max);
   return (
     <section className="group" aria-label="Runtime">
       <div className="row">
         <div className="grow">
-          <label htmlFor="idle">Unload model when idle</label>
+          <div>Unload model when idle</div>
           <div className="sub">{size ? `Frees ${size.startsWith("~") ? size : "~" + size}. ` : ""}Reloading takes ~10–30 s.</div>
         </div>
-        <Popup id="idle" value={s.idleMinutes} options={idle} onChange={(v) => save({ idleMinutes: v })} />
+        <Popup label="Unload model when idle" value={s.idleMinutes} options={idle} onChange={(v) => save({ idleMinutes: v })} />
       </div>
       <div className="row">
         <div className="grow">
@@ -256,7 +258,7 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
           step={1024}
           ticks={5}
           value={budget}
-          active={settled}
+          active={live}
           onChange={(v) => {
             const snapped = Math.round(v / 1024) * 1024;
             if (snapped !== budget) save({ thinkingBudget: snapped });
@@ -293,6 +295,7 @@ function SystemPrompt({ value, save }: { value: string; save: (p: Partial<Settin
 }
 
 function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories: (m: Memory[]) => void }) {
+  const live = useContext(Live);
   const [selected, setSelected] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -347,9 +350,23 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
           {!adding && memories.length === 0 && <div className="fact empty">No facts yet.</div>}
         </div>
         <div className="list-footer">
-          <button aria-label="Add fact" onClick={() => setAdding(true)}>+</button>
-          <span aria-hidden="true" />
-          <button aria-label="Remove selected fact" disabled={selected == null} onClick={remove}>−</button>
+          <NativeControl
+            kind="segmented"
+            label="Add or remove a fact"
+            symbols={["plus", "minus"]}
+            segmentStyle="smallSquare"
+            enabled={[true, selected != null]}
+            onSegment={(i) => (i === 0 ? setAdding(true) : remove())}
+            active={live}
+            style={{ width: 56, height: 24 }}
+            fallback={
+              <>
+                <button aria-label="Add fact" onClick={() => setAdding(true)}>+</button>
+                <span aria-hidden="true" />
+                <button aria-label="Remove selected fact" disabled={selected == null} onClick={remove}>−</button>
+              </>
+            }
+          />
         </div>
       </div>
       <div className="footnote">Facts saved here are added to chats once memory ships (Milestone 3).</div>

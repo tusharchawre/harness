@@ -326,7 +326,7 @@ input, textarea, select { font: inherit; color: var(--text); }
 .nav-item svg { color: var(--text-3); }
 .nav-item:hover { background: var(--hover); }
 .nav-item.current { background: var(--selected); }
-.settings-toolbar .close { width: 26px; height: 26px; border-radius: 999px; background: var(--hover); color: var(--secondary); }
+.settings-toolbar .close { width: 28px; height: 28px; border-radius: 7px; color: var(--secondary); }
 .settings-toolbar .close:hover { background: var(--selected); color: var(--text); }
 .native-slot { flex-shrink: 0; }
 .settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -373,7 +373,7 @@ textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, tran
 .fact.selected .when { color: rgba(255, 255, 255, 0.8); }
 .fact.empty { color: var(--muted); }
 .fact.editing input { flex: 1; border: 0; background: transparent; outline: none; padding: 0; user-select: text; -webkit-user-select: text; }
-.list-footer { height: 28px; border-top: 1px solid var(--separator); display: flex; align-items: center; padding: 0 4px; }
+.list-footer { height: 30px; border-top: 1px solid var(--separator); display: flex; align-items: center; padding: 0 6px; }
 .list-footer button { width: 26px; height: 22px; color: var(--text-3); font-size: 15px; border-radius: 5px; }
 .list-footer button:hover:not(:disabled) { background: var(--hover); }
 .list-footer span { width: 1px; height: 14px; background: var(--separator-strong); }

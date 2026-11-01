@@ -27,7 +27,23 @@ export function onOpenSettings(fn: (pane: string) => void): () => void {
 
 // Real AppKit controls floated over the page (see src-tauri/src/native_controls.rs).
 type Rect = { x: number; y: number; w: number; h: number };
-export type NativeSpec = { id: string; kind: "slider" | "switch"; frame: Rect; clip: Rect; value: number; min?: number; max?: number; ticks?: number; label?: string };
+export type NativeSpec = {
+  id: string;
+  kind: "slider" | "switch" | "popup" | "search" | "segmented";
+  frame: Rect;
+  clip: Rect;
+  value?: number;
+  min?: number;
+  max?: number;
+  ticks?: number;
+  label?: string;
+  items?: string[]; // popup titles or segmented SF Symbol names
+  enabled?: boolean[];
+  style?: string;
+  text?: string;
+  placeholder?: string;
+  align?: string;
+};
 export const nativeControls = isTauri;
 export function upsertNative(spec: NativeSpec) {
   invoke("native_control", { spec }).catch(console.error);
@@ -35,9 +51,9 @@ export function upsertNative(spec: NativeSpec) {
 export function removeNative(id: string) {
   invoke("native_control", { remove: id }).catch(console.error);
 }
-export function onNativeControl(fn: (id: string, value: number) => void): () => void {
+export function onNativeControl(fn: (id: string, value: number, text: string | null) => void): () => void {
   if (!isTauri) return () => {};
-  const off = listen<{ id: string; value: number }>("native-control", (e) => fn(e.payload.id, e.payload.value));
+  const off = listen<{ id: string; value: number; text: string | null }>("native-control", (e) => fn(e.payload.id, e.payload.value, e.payload.text));
   return () => void off.then((f) => f());
 }
 
