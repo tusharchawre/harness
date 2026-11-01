@@ -29,6 +29,8 @@ db.run(`CREATE TABLE IF NOT EXISTS messages (
 )`);
 db.run("CREATE INDEX IF NOT EXISTS messages_chat ON messages(chat_id, id)");
 db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+// Facts about the user (Settings › Memory). Used in chats from Milestone 3.
+db.run("CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created_at INTEGER NOT NULL)");
 
 export type Chat = { id: string; title: string; preset: string | null; created_at: number; updated_at: number };
 export type Message = {
@@ -71,6 +73,14 @@ export const messages = {
       )
       .get(m.chat_id, m.role, m.content, m.reasoning, m.model, m.thinking, m.prompt_tokens, m.completion_tokens, m.tokens_per_sec, Date.now())!;
   },
+};
+
+export type Memory = { id: number; text: string; created_at: number };
+export const memories = {
+  list: () => db.query<Memory, []>("SELECT * FROM memories ORDER BY id DESC").all(),
+  add: (text: string) =>
+    db.query<Memory, [string, number]>("INSERT INTO memories (text, created_at) VALUES (?, ?) RETURNING *").get(text, Date.now())!,
+  delete: (id: number) => db.query("DELETE FROM memories WHERE id = ?").run(id),
 };
 
 export const settings = {

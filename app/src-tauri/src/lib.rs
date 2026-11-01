@@ -99,6 +99,11 @@ fn open_settings_window(app: AppHandle) {
     open_settings(&app);
 }
 
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    show_main(&app);
+}
+
 // Show a file in Finder (source sheet).
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -173,7 +178,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, open_settings_window, reveal])
+        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, open_settings_window, show_main_window, reveal])
         .setup(|app| {
             build_menus(app.handle())?;
             if let Some(main) = app.get_webview_window("main") {

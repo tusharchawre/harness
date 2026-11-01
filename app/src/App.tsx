@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings } from "./api";
 import { Composer } from "./Composer";
-import { onMenu, setModelMenu } from "./native";
-import { Sidebar } from "./Sidebar";
+import { onMenu, onSettingsChanged, setModelMenu } from "./native";
+import { Sidebar, WindowButtons } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
 
 type Draft = { reasoning: string; content: string; status: string };
@@ -13,12 +13,12 @@ export function App() {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [input, setInput] = useState("");
-  const [thinking, setThinking] = useState(() => localStorage.getItem("thinking") === "1");
+  const [thinking, setThinking] = useState(false);
   const [model, setModel] = useState<ModelState | null>(null);
-  const [, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
-  // Model for the open chat, or for the next new chat (remembers the last pick).
-  const [preset, setPreset] = useState(() => localStorage.getItem("preset") ?? "");
+  // Model for the open chat, or for the next new chat (starts at Settings › Model).
+  const [preset, setPreset] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
@@ -28,13 +28,23 @@ export function App() {
 
   const refreshChats = () => api.chats().then(setChats);
 
+  // New chats start from Settings › Model and Think by default.
+  const applySettings = (s: Settings, resetDraftChat: boolean) => {
+    setSettings(s);
+    if (resetDraftChat) (setPreset(s.defaultModel), setThinking(s.thinkDefault));
+  };
+  const chatIdRef = useRef(chatId);
+  chatIdRef.current = chatId;
+
   useEffect(() => {
     const boot = () =>
-      Promise.all([refreshChats(), api.settings().then(setSettings), api.models().then(setPresets)])
+      Promise.all([refreshChats(), api.settings().then((s) => applySettings(s, true)), api.models().then(setPresets)])
         .then(() => setOffline(false))
         .catch(() => (setOffline(true), setTimeout(boot, 1500)));
     boot();
-    return watchModel(setModel);
+    const offSettings = onSettingsChanged(() => api.settings().then((s) => applySettings(s, chatIdRef.current === null)));
+    const offModel = watchModel(setModel);
+    return () => (offSettings(), offModel());
   }, []);
 
   useEffect(() => {
@@ -44,7 +54,6 @@ export function App() {
   }, [chatId]);
 
   useEffect(() => bottomRef.current?.scrollIntoView({ block: "end" }), [msgs, draft]);
-  useEffect(() => localStorage.setItem("thinking", thinking ? "1" : "0"), [thinking]);
 
   const activePreset = presets.find((p) => p.id === preset) ?? presets[0];
   const busy = draft !== null;
@@ -56,13 +65,13 @@ export function App() {
 
   function choosePreset(id: string) {
     setPreset(id);
-    localStorage.setItem("preset", id);
     if (chatId) api.setChatPreset(chatId, id).then(refreshChats);
   }
 
   function newChat() {
     setChatId(null);
     setError(null);
+    if (settings) applySettings(settings, true);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -108,6 +117,11 @@ export function App() {
     }
   }
 
+  async function renameChat(id: string, title: string) {
+    await api.renameChat(id, title);
+    refreshChats();
+  }
+
   async function removeChat(id: string) {
     await api.deleteChat(id);
     if (id === chatId) setChatId(null);
@@ -116,10 +130,26 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar chats={chats} chatId={chatId} hidden={sidebarHidden} onPick={setChatId} onNew={newChat} onDelete={removeChat} />
+      <Sidebar
+        chats={chats}
+        chatId={chatId}
+        hidden={sidebarHidden}
+        onPick={setChatId}
+        onNew={newChat}
+        onToggle={() => setSidebarHidden(true)}
+        onRename={renameChat}
+        onDelete={removeChat}
+      />
 
       <main className="main">
-        <TitleBar presets={presets} active={activePreset} model={model} disabled={busy} onPick={choosePreset} />
+        <TitleBar
+          presets={presets}
+          active={activePreset}
+          model={model}
+          disabled={busy}
+          onPick={choosePreset}
+          leading={sidebarHidden && <WindowButtons onToggle={() => setSidebarHidden(false)} onNew={newChat} />}
+        />
         {offline && <div className="banner">Waiting for the harness server on 127.0.0.1:8787…</div>}
         {model?.status === "error" && <div className="banner error">{model.error}</div>}
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type ModelState, type Preset } from "./api";
 import { Icon } from "./icons";
 import { openSettings } from "./native";
@@ -23,6 +23,7 @@ export function TitleBar(props: {
   model: ModelState | null;
   disabled: boolean;
   onPick: (id: string) => void;
+  leading?: ReactNode; // window buttons while the sidebar is hidden
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -40,6 +41,7 @@ export function TitleBar(props: {
 
   return (
     <header className="titlebar" data-tauri-drag-region>
+      {props.leading && <div className="left">{props.leading}</div>}
       <div ref={ref} style={{ position: "relative" }}>
         <button className="model-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {props.active?.label ?? "No model"}
@@ -68,7 +70,7 @@ export function TitleBar(props: {
             <button role="menuitem" className="item" disabled={props.model?.status !== "ready"} onClick={() => (api.unloadModel(), setOpen(false))}>
               Unload model
             </button>
-            <button role="menuitem" className="item" onClick={() => (openSettings(), setOpen(false))}>
+            <button role="menuitem" className="item" onClick={() => (openSettings("models"), setOpen(false))}>
               Model settings…
             </button>
           </div>

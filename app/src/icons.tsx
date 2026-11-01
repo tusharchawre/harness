@@ -12,16 +12,17 @@ const P = {
   mic: ["M5 11a7 7 0 0 0 14 0M12 18v3"],
   arrowUp: ["M12 19V5M6 11l6-6 6 6"],
   arrowDown: ["M12 5v14M6 13l6 6 6-6"],
-  sidebar: ["M4 5h16v14H4z", "M9 5v14"],
   general: ["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2v3M12 19v3M2 12h3M19 12h3"],
   models: ["M4 7l8-4 8 4-8 4zM4 12l8 4 8-4M4 17l8 4 8-4"],
   tools: ["M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5z"],
 } as const;
 
-export type IconName = keyof typeof P | "search" | "settings" | "stop" | "memory" | "voice";
+export type IconName = keyof typeof P | "search" | "settings" | "stop" | "memory" | "voice" | "sidebar" | "more";
 
 export function Icon({ name, size = 14, stroke = 1.7 }: { name: IconName; size?: number; stroke?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: stroke, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  if (name === "sidebar") return <svg {...common}><rect x="3" y="4.5" width="18" height="15" rx="3.5" /><path d="M9 4.5v15" /></svg>;
+  if (name === "more") return <svg {...common} fill="currentColor" stroke="none"><circle cx="6" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="18" cy="12" r="1.6" /></svg>;
   if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>;
   if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3" /><path d={P.gear[0]} /></svg>;
   if (name === "stop") return <svg {...common} fill="currentColor" stroke="none"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>;

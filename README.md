@@ -19,7 +19,7 @@ React UI (Tauri webview) ⇄ SSE ⇄ bun sidecar (Hono, SQLite, model manager) �
 ## Milestone 1: Chat
 
 - Streaming chat, history in SQLite (`~/Library/Application Support/harness/harness.db`)
-- Model loads on demand, unloads after 10 idle minutes (configurable), header shows unloaded / loading / ready, plus "Unload now"
+- Model loads on demand, unloads after 30 idle minutes (configurable, or never), header shows unloaded / loading / ready, plus "Unload now"
 - Each reply shows the model name, token count and decode tokens/sec
 - Thinking on/off toggle (passes `enable_thinking` to the Qwen chat template); reasoning shows in a collapsible block and isn't sent back as context
 - Model dropdown per chat: **Qwen3.5-9B + MTP** (default) or **Qwen3.5-4B**. Switching swaps the loaded model on the next message (~10–30 s)
@@ -62,7 +62,7 @@ Env vars, read from `server/.env` in dev or `~/Library/Application Support/harne
 
 | Var | Default |
 | --- | --- |
-| `IDLE_MINUTES` | `10` |
+| `IDLE_MINUTES` | `30` (0 = never) |
 | `THINKING_BUDGET` | `1024` (0 = no cap) |
 | `HARNESS_PORT` | `8787` |
 | `MLX_PORT` | `8080` |

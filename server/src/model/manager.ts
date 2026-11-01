@@ -144,7 +144,8 @@ export class ModelManager {
   }
 
   private checkIdle() {
-    if (this.status !== "ready" || this.busy > 0 || this.lastUsed === null) return;
+    // idleMinutes 0 = never unload.
+    if (this.idleMinutes <= 0 || this.status !== "ready" || this.busy > 0 || this.lastUsed === null) return;
     if (Date.now() - this.lastUsed > this.idleMinutes * 60_000) {
       console.log(`[model] idle ${this.idleMinutes} min, unloading`);
       void this.unload();

@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { config, presetById, presets } from "./config";
-import { chats, messages, settings } from "./db";
+import { config, DEFAULT_SYSTEM_PROMPT, presetById, presets } from "./config";
+import { chats, memories, messages, settings } from "./db";
 import { OpenAICompatClient, type ChatMessage } from "./model/client";
 import { ModelManager } from "./model/manager";
 
@@ -40,11 +40,24 @@ app.post("/api/model/unload", async (c) => {
 });
 
 // ---- settings ----
-const currentSettings = () => ({ idleMinutes: manager.idleMinutes, thinkingBudget });
+// Everything here is saved in SQLite and applies to the next message.
+const currentSettings = () => ({
+  idleMinutes: manager.idleMinutes, // 0 = never unload
+  thinkingBudget,
+  thinkDefault: settings.get("thinkDefault") === "1",
+  systemPrompt: settings.get("systemPrompt") ?? DEFAULT_SYSTEM_PROMPT,
+  defaultModel: presetById(settings.get("defaultModel")).id,
+});
 app.get("/api/settings", (c) => c.json(currentSettings()));
 app.put("/api/settings", async (c) => {
-  const body = await c.req.json<{ idleMinutes?: number; thinkingBudget?: number }>();
-  if (body.idleMinutes && body.idleMinutes > 0) {
+  const body = await c.req.json<{
+    idleMinutes?: number;
+    thinkingBudget?: number;
+    thinkDefault?: boolean;
+    systemPrompt?: string;
+    defaultModel?: string;
+  }>();
+  if (body.idleMinutes !== undefined && body.idleMinutes >= 0) {
     manager.idleMinutes = body.idleMinutes;
     settings.set("idleMinutes", String(body.idleMinutes));
   }
@@ -52,6 +65,9 @@ app.put("/api/settings", async (c) => {
     thinkingBudget = Math.floor(body.thinkingBudget);
     settings.set("thinkingBudget", String(thinkingBudget));
   }
+  if (body.thinkDefault !== undefined) settings.set("thinkDefault", body.thinkDefault ? "1" : "0");
+  if (typeof body.systemPrompt === "string") settings.set("systemPrompt", body.systemPrompt);
+  if (body.defaultModel) settings.set("defaultModel", presetById(body.defaultModel).id);
   return c.json(currentSettings());
 });
 
@@ -62,8 +78,9 @@ app.post("/api/chats", async (c) => {
   return c.json(chats.create("New chat", presetById(preset).id));
 });
 app.patch("/api/chats/:id", async (c) => {
-  const { preset } = await c.req.json<{ preset: string }>();
-  chats.setPreset(c.req.param("id"), presetById(preset).id); // takes effect on the next message
+  const { preset, title } = await c.req.json<{ preset?: string; title?: string }>();
+  if (preset) chats.setPreset(c.req.param("id"), presetById(preset).id); // takes effect on the next message
+  if (title?.trim()) chats.rename(c.req.param("id"), title.trim().slice(0, 120));
   return c.json(chats.get(c.req.param("id")));
 });
 app.get("/api/chats/:id", (c) => {
@@ -73,6 +90,18 @@ app.get("/api/chats/:id", (c) => {
 });
 app.delete("/api/chats/:id", (c) => {
   chats.delete(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+// ---- memory ----
+app.get("/api/memories", (c) => c.json(memories.list()));
+app.post("/api/memories", async (c) => {
+  const { text } = await c.req.json<{ text: string }>();
+  if (!text?.trim()) return c.json({ error: "empty fact" }, 400);
+  return c.json(memories.add(text.trim()));
+});
+app.delete("/api/memories/:id", (c) => {
+  memories.delete(Number(c.req.param("id")));
   return c.json({ ok: true });
 });
 
@@ -93,7 +122,11 @@ app.post("/api/chats/:id/messages", async (c) => {
   chats.touch(chat.id);
 
   // Only final answers go back into context; past reasoning is dropped.
-  const prompt: ChatMessage[] = [...history, userMsg].map((m) => ({ role: m.role, content: m.content }));
+  const system = currentSettings().systemPrompt.trim();
+  const prompt: ChatMessage[] = [
+    ...(system ? [{ role: "system" as const, content: system }] : []),
+    ...[...history, userMsg].map((m) => ({ role: m.role, content: m.content })),
+  ];
 
   return streamSSE(c, async (stream) => {
     const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) });

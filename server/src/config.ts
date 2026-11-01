@@ -48,10 +48,13 @@ const presetsFile = join(DATA_DIR, "models.json");
 export const presets: ModelPreset[] = existsSync(presetsFile) ? JSON.parse(readFileSync(presetsFile, "utf8")) : DEFAULT_PRESETS;
 export const presetById = (id: string | null | undefined) => presets.find((p) => p.id === id) ?? presets[0];
 
+export const DEFAULT_SYSTEM_PROMPT =
+  "Be concise and direct. No emojis, no filler, no follow-up offers. Reply in English. Use tools when a question needs facts you don't have.";
+
 export const config = {
   port: Number(process.env.HARNESS_PORT ?? 8787),
   mlxPort: Number(process.env.MLX_PORT ?? 8080),
-  defaultIdleMinutes: Number(process.env.IDLE_MINUTES ?? 10),
+  defaultIdleMinutes: Number(process.env.IDLE_MINUTES ?? 30),
   defaultThinkingBudget: Number(process.env.THINKING_BUDGET ?? 1024),
   // mlx-vlm rather than mlx_lm: only mlx-vlm runs Qwen3.5's MTP drafter.
   mlxVlmSpec: process.env.MLX_VLM_SPEC ?? "mlx-vlm==0.7.11",
