@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings } from "./api";
+import { Composer } from "./Composer";
+import { onMenu, setModelMenu } from "./native";
+import { Sidebar } from "./Sidebar";
+import { TitleBar } from "./TitleBar";
 
 type Draft = { reasoning: string; content: string; status: string };
 
@@ -11,15 +15,16 @@ export function App() {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(() => localStorage.getItem("thinking") === "1");
   const [model, setModel] = useState<ModelState | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [, setSettings] = useState<Settings | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   // Model for the open chat, or for the next new chat (remembers the last pick).
   const [preset, setPreset] = useState(() => localStorage.getItem("preset") ?? "");
-  const [showSettings, setShowSettings] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const refreshChats = () => api.chats().then(setChats);
 
@@ -42,12 +47,34 @@ export function App() {
   useEffect(() => localStorage.setItem("thinking", thinking ? "1" : "0"), [thinking]);
 
   const activePreset = presets.find((p) => p.id === preset) ?? presets[0];
+  const busy = draft !== null;
+
+  // Keep the native Model menu in sync with the list, the selection and the load state.
+  useEffect(() => {
+    if (presets.length) setModelMenu(presets.map(({ id, label }) => ({ id, label })), activePreset?.id ?? null, model?.status === "ready");
+  }, [presets, activePreset?.id, model?.status]);
 
   function choosePreset(id: string) {
     setPreset(id);
     localStorage.setItem("preset", id);
     if (chatId) api.setChatPreset(chatId, id).then(refreshChats);
   }
+
+  function newChat() {
+    setChatId(null);
+    setError(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  // Menu bar / tray actions. Handlers read the latest state through this ref.
+  const menuRef = useRef<(id: string) => void>(() => {});
+  menuRef.current = (id) => {
+    if (id === "new_chat") newChat();
+    else if (id === "toggle_sidebar") setSidebarHidden((h) => !h);
+    else if (id === "unload") api.unloadModel();
+    else if (id.startsWith("model:") && !busy) choosePreset(id.slice(6));
+  };
+  useEffect(() => onMenu((id) => menuRef.current(id)), []);
 
   async function send() {
     const text = input.trim();
@@ -87,135 +114,51 @@ export function App() {
     refreshChats();
   }
 
-  const busy = draft !== null;
-
   return (
     <div className="app">
-      <aside className="sidebar">
-        <button className="new" onClick={() => setChatId(null)}>+ New chat</button>
-        <nav>
-          {chats.map((c) => (
-            <div key={c.id} className={"chat-item" + (c.id === chatId ? " active" : "")} onClick={() => setChatId(c.id)}>
-              <span>{c.title}</span>
-              <button className="x" title="Delete chat" onClick={(e) => (e.stopPropagation(), removeChat(c.id))}>×</button>
-            </div>
-          ))}
-        </nav>
-      </aside>
+      <Sidebar chats={chats} chatId={chatId} hidden={sidebarHidden} onPick={setChatId} onNew={newChat} onDelete={removeChat} />
 
-      <main>
-        <header>
-          <ModelPill state={model} />
-          <div className="spacer" />
-          {model?.status === "ready" && <button onClick={() => api.unloadModel()}>Unload now</button>}
-          {(model?.status === "unloaded" || model?.status === "error") && activePreset && (
-            <button onClick={() => api.loadModel(activePreset.id)}>Load</button>
-          )}
-          <button onClick={() => setShowSettings((s) => !s)}>Settings</button>
-        </header>
-
-        {showSettings && settings && <SettingsPanel settings={settings} onSave={(s) => api.saveSettings(s).then(setSettings)} />}
+      <main className="main">
+        <TitleBar presets={presets} active={activePreset} model={model} disabled={busy} onPick={choosePreset} />
         {offline && <div className="banner">Waiting for the harness server on 127.0.0.1:8787…</div>}
         {model?.status === "error" && <div className="banner error">{model.error}</div>}
 
-        <section className="messages">
-          {msgs.length === 0 && !draft && <div className="empty">Local chat. Nothing leaves this Mac.</div>}
-          {msgs.map((m) => <Bubble key={m.id} m={m} />)}
-          {draft && (
-            <div className="msg assistant">
-              {draft.reasoning && <Reasoning text={draft.reasoning} open />}
-              {draft.content ? <div className="content">{draft.content}</div> : <div className="meta">{statusLabel(draft.status, model)}</div>}
-            </div>
-          )}
-          {error && <div className="banner error">{error}</div>}
-          <div ref={bottomRef} />
-        </section>
+        <div className="scroll">
+          <div className="thread">
+            {msgs.length === 0 && !draft && <div className="empty">Local chat. Nothing leaves this Mac.</div>}
+            {msgs.map((m) =>
+              m.role === "user" ? (
+                <div key={m.id} className="user-bubble">{m.content}</div>
+              ) : (
+                <div key={m.id} className="reply">
+                  <div className="md" style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+                  <div className="meta">{[m.model, m.tokens_per_sec != null && `${m.tokens_per_sec.toFixed(1)} tok/s`].filter(Boolean).join(" · ")}</div>
+                </div>
+              ),
+            )}
+            {draft && (
+              <div className="reply">
+                {draft.content ? <div className="md" style={{ whiteSpace: "pre-wrap" }}>{draft.content}</div> : <div className="meta shimmer">{draft.status === "loading" ? "Loading model…" : "Thinking…"}</div>}
+              </div>
+            )}
+            {error && <div className="banner error">{error}</div>}
+            <div ref={bottomRef} />
+          </div>
+        </div>
 
-        <footer className="composer">
-          <textarea
+        <div className="composer-wrap">
+          <Composer
+            ref={inputRef}
             value={input}
-            placeholder="Message"
-            rows={Math.min(8, input.split("\n").length)}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) (e.preventDefault(), send());
-            }}
+            onChange={setInput}
+            thinking={thinking}
+            onThinking={setThinking}
+            busy={busy}
+            onSend={send}
+            onStop={() => abortRef.current?.abort()}
           />
-          <select
-            className="model-select"
-            title="Model for this chat (switching swaps the loaded model on the next message)"
-            value={activePreset?.id ?? ""}
-            disabled={busy}
-            onChange={(e) => choosePreset(e.target.value)}
-          >
-            {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-          <label className="toggle" title="Qwen thinking mode (enable_thinking)">
-            <input type="checkbox" checked={thinking} onChange={(e) => setThinking(e.target.checked)} /> Thinking
-          </label>
-          {busy ? <button onClick={() => abortRef.current?.abort()}>Stop</button> : <button className="primary" onClick={send} disabled={!input.trim()}>Send</button>}
-        </footer>
+        </div>
       </main>
     </div>
-  );
-}
-
-function statusLabel(status: string, model: ModelState | null) {
-  if (status === "loading" || model?.status === "loading") return "Loading model… (switching models takes ~10–30 s)";
-  if (status === "generating") return "Thinking…";
-  return "…";
-}
-
-function ModelPill({ state }: { state: ModelState | null }) {
-  const status = state?.status ?? "unloaded";
-  return (
-    <div className={`pill ${status}`}>
-      <span className="dot" />
-      {status}
-      <span className="model-name">{state?.label}</span>
-    </div>
-  );
-}
-
-function Bubble({ m }: { m: Message }) {
-  return (
-    <div className={`msg ${m.role}`}>
-      {m.reasoning && <Reasoning text={m.reasoning} />}
-      <div className="content">{m.content}</div>
-      {m.role === "assistant" && (
-        <div className="meta">
-          {m.model}
-          {m.completion_tokens != null && ` · ${m.completion_tokens} tok`}
-          {m.tokens_per_sec != null && ` · ${m.tokens_per_sec.toFixed(1)} tok/s`}
-          {m.thinking ? " · thinking" : ""}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Reasoning({ text, open }: { text: string; open?: boolean }) {
-  return (
-    <details className="reasoning" open={open}>
-      <summary>Reasoning</summary>
-      <div>{text.trim()}</div>
-    </details>
-  );
-}
-
-function SettingsPanel({ settings, onSave }: { settings: Settings; onSave: (s: Settings) => void }) {
-  const [idle, setIdle] = useState(String(settings.idleMinutes));
-  const [budget, setBudget] = useState(String(settings.thinkingBudget));
-  return (
-    <form className="settings" onSubmit={(e) => (e.preventDefault(), onSave({ idleMinutes: Number(idle), thinkingBudget: Number(budget) }))}>
-      <label>
-        Unload after idle (min) <input type="number" min={1} value={idle} onChange={(e) => setIdle(e.target.value)} />
-      </label>
-      <label title="Max reasoning tokens before the model must answer. 0 = no cap.">
-        Thinking budget (tokens) <input type="number" min={0} step={256} value={budget} onChange={(e) => setBudget(e.target.value)} />
-      </label>
-      <button type="submit">Save</button>
-      <small>The thinking budget isn't applied to MTP models yet (mlx-vlm doesn't support it with speculative decoding).</small>
-    </form>
   );
 }

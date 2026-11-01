@@ -28,7 +28,7 @@ app.get("/api/model/events", (c) =>
     off();
   }),
 );
-app.get("/api/models", (c) => c.json(presets.map(({ id, label, model, draftModel }) => ({ id, label, model, mtp: !!draftModel }))));
+app.get("/api/models", (c) => c.json(presets.map(({ id, label, model, draftModel, info }) => ({ id, label, model, mtp: !!draftModel, info: info ?? {} }))));
 app.post("/api/model/load", async (c) => {
   const { preset } = await c.req.json<{ preset?: string }>().catch(() => ({ preset: undefined }));
   void manager.ensureReady(presetById(preset)).catch(() => {}); // progress arrives via /api/model/events

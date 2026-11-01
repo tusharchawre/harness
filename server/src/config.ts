@@ -22,7 +22,9 @@ function findUv(): string {
   return candidates.find((p) => existsSync(p)) ?? Bun.which("uv") ?? "uv";
 }
 
-export type ModelPreset = { id: string; label: string; model: string; draftModel?: string; draftKind?: string };
+// `info` is display-only (model menu, Settings).
+export type ModelInfo = { size?: string; speed?: string; humaneval?: string };
+export type ModelPreset = { id: string; label: string; model: string; draftModel?: string; draftKind?: string; info?: ModelInfo };
 
 // DATA_DIR/models.json (same shape) replaces this list. The first entry is the default.
 const DEFAULT_PRESETS: ModelPreset[] = [
@@ -33,8 +35,14 @@ const DEFAULT_PRESETS: ModelPreset[] = [
     // Multi-token-prediction drafter: speculative decoding, ~1.5x faster, same answers.
     draftModel: "mlx-community/Qwen3.5-9B-MTP-4bit",
     draftKind: "mtp",
+    info: { size: "5.6 GB · 4-bit", speed: "~25 tokens/s", humaneval: "95% · 60%" },
   },
-  { id: "qwen3.5-4b", label: "Qwen3.5-4B", model: "mlx-community/Qwen3.5-4B-4bit" },
+  {
+    id: "qwen3.5-4b",
+    label: "Qwen3.5-4B",
+    model: "mlx-community/Qwen3.5-4B-4bit",
+    info: { size: "~2.5 GB · 4-bit", speed: "~34 tokens/s", humaneval: "92.5% · 70%" },
+  },
 ];
 const presetsFile = join(DATA_DIR, "models.json");
 export const presets: ModelPreset[] = existsSync(presetsFile) ? JSON.parse(readFileSync(presetsFile, "utf8")) : DEFAULT_PRESETS;

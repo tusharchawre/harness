@@ -3,7 +3,7 @@ export const API = import.meta.env.VITE_API ?? "http://127.0.0.1:8787";
 export type ModelStatus = "unloaded" | "loading" | "ready" | "error";
 export type ModelState = { status: ModelStatus; presetId: string | null; label: string | null; error?: string; idleMinutes: number; lastUsed: number | null };
 export type Settings = { idleMinutes: number; thinkingBudget: number };
-export type Preset = { id: string; label: string; model: string; mtp: boolean };
+export type Preset = { id: string; label: string; model: string; mtp: boolean; info: { size?: string; speed?: string; humaneval?: string } };
 export type Chat = { id: string; title: string; preset: string | null; created_at: number; updated_at: number };
 export type Message = {
   id: number;
