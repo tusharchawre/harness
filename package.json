@@ -1,0 +1,9 @@
+{
+  "name": "harness",
+  "private": true,
+  "workspaces": ["server", "app"],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "build": "bun run --filter server build && bun run --filter app build"
+  }
+}

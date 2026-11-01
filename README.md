@@ -1,0 +1,79 @@
+# Harness
+
+Local-only Mac app for chatting with open models. No paid APIs, nothing leaves the machine.
+
+```
+React UI (Tauri webview) ⇄ SSE ⇄ bun sidecar (Hono, SQLite, model manager) ⇄ HTTP ⇄ mlx_vlm.server ⇄ GPU
+```
+
+| Path | What |
+| --- | --- |
+| `server/` | bun + Hono backend. All app logic lives here. Compiled into a single binary and shipped as a Tauri sidecar. |
+| `server/src/model/client.ts` | The one model interface (`ModelClient`). Swap backends by adding another implementation. |
+| `server/src/model/manager.ts` | Starts `mlx_vlm.server` on the first message, polls until ready, kills it after N idle minutes. One model in memory at a time. |
+| `server/src/config.ts` | Model presets (`DEFAULT_PRESETS`) and env config. |
+| `server/src/db.ts` | SQLite (bun:sqlite): chats, messages, settings. |
+| `app/` | Vite + React + TypeScript UI. |
+| `app/src-tauri/` | Tauri v2 shell. Rust only starts and stops the sidecar. |
+
+## Milestone 1: Chat
+
+- Streaming chat, history in SQLite (`~/Library/Application Support/harness/harness.db`)
+- Model loads on demand, unloads after 10 idle minutes (configurable), header shows unloaded / loading / ready, plus "Unload now"
+- Each reply shows the model name, token count and decode tokens/sec
+- Thinking on/off toggle (passes `enable_thinking` to the Qwen chat template); reasoning shows in a collapsible block and isn't sent back as context
+- Model dropdown per chat: **Qwen3.5-9B + MTP** (default) or **Qwen3.5-4B**. Switching swaps the loaded model on the next message (~10–30 s)
+- Model server is **mlx-vlm**, not mlx_lm: only mlx-vlm runs Qwen3.5's multi-token-prediction (MTP) drafter. 9B + MTP decodes ~1.5× faster (25 vs 17 tok/s, same pass@1 on the code eval)
+- Thinking budget (default 1024 tokens), enforced by mlx-vlm's `thinking_budget`. **Not applied to MTP presets**: mlx-vlm refuses a budget while a speculative drafter is loaded, so 9B + MTP thinks uncapped for now
+- Sampling follows the Qwen3.5 model card (`QWEN_SAMPLING` in `client.ts`); greedy decoding makes thinking loop
+
+## Requirements
+
+- bun, uv, Rust (`rustup`), Xcode command line tools
+- Models are fetched on first load (9B ~6 GB, its MTP drafter 0.14 GB, 4B ~3 GB). To pre-download:
+  `HF_XET_HIGH_PERFORMANCE=1 uvx --from huggingface_hub hf download mlx-community/Qwen3.5-9B-4bit` (same for `Qwen3.5-9B-MTP-4bit`, `Qwen3.5-4B-4bit`)
+
+## Run in dev
+
+```sh
+cd harness
+bun install
+bun run dev
+```
+
+This runs the server with `--watch` on 127.0.0.1:8787 and `tauri dev` (Vite on :1420) side by side. In dev the Rust shell does *not* spawn the sidecar; the watched server is used instead. The UI also works in a normal browser at http://localhost:1420.
+
+Server alone: `cd server && bun run dev`.
+
+## Build the .app
+
+```sh
+cd harness
+bun run build
+```
+
+This compiles the server to `app/src-tauri/binaries/harness-server-aarch64-apple-darwin`, then runs `tauri build`. Output: `app/src-tauri/target/release/bundle/macos/Harness.app`. Drag it to /Applications.
+
+On quit, the app writes `shutdown` to the sidecar's stdin; the sidecar kills `mlx_vlm.server` and exits.
+
+## Config
+
+Env vars, read from `server/.env` in dev or `~/Library/Application Support/harness/.env` for the built app (see `server/.env.example`):
+
+| Var | Default |
+| --- | --- |
+| `IDLE_MINUTES` | `10` |
+| `THINKING_BUDGET` | `1024` (0 = no cap) |
+| `HARNESS_PORT` | `8787` |
+| `MLX_PORT` | `8080` |
+| `MLX_VLM_SPEC` | `mlx-vlm==0.7.11` (run with `uv tool run --from`) |
+| `UV_BIN` | auto-detected (`~/.local/bin/uv`, Homebrew, PATH) |
+
+Idle minutes and thinking budget can also be changed in the app (Settings); those are saved in SQLite and override the env defaults.
+
+Models: edit `DEFAULT_PRESETS` in `server/src/config.ts`, or put a `models.json` with the same shape in `~/Library/Application Support/harness/` (the first entry is the default):
+
+```json
+[{ "id": "qwen3.5-9b-mtp", "label": "Qwen3.5-9B + MTP", "model": "mlx-community/Qwen3.5-9B-4bit",
+   "draftModel": "mlx-community/Qwen3.5-9B-MTP-4bit", "draftKind": "mtp" }]
+```
