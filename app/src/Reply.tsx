@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { ToolStep } from "./api";
 import { Icon } from "./icons";
+import { Markdown } from "./Markdown";
 
 // What sits above a reply's text: "Thought for Ns" and "Used N tools", each a disclosure.
 // While the model reasons, "Thinking…" shimmers and the reasoning streams in a short window that
@@ -11,19 +12,6 @@ function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
     <div className={"collapse" + (open ? " open" : "")} aria-hidden={!open}>
       <div>{children}</div>
     </div>
-  );
-}
-
-// Live reasoning washes in word by word like replies. Words settle into plain text in chunks of
-// 200 so a long think doesn't keep thousands of spans around; spans keep absolute-index keys.
-function LiveText({ text }: { text: string }) {
-  const words = text.match(/\s+|\S+\s*/g) ?? [];
-  const settled = Math.max(0, Math.floor((words.length - 200) / 200) * 200);
-  return (
-    <>
-      {words.slice(0, settled).join("")}
-      {words.slice(settled).map((w, i) => <span key={settled + i} className="w">{w}</span>)}
-    </>
   );
 }
 
@@ -51,25 +39,23 @@ export function ReplyExtras(props: {
   thinkingNow?: boolean; // reasoning is streaming and no answer yet
   live?: boolean; // part of the reply still streaming
 }) {
-  const [showReasoning, setShowReasoning] = useState(false);
+  const [showReasoning, setShowReasoning] = useState<boolean | null>(null); // null: open only while thinking
   const [showTools, setShowTools] = useState<boolean | null>(null); // null: follow `live`
   const { reasoning, tools } = props;
   if (!reasoning && !tools.length) return null;
 
   const pending = tools.some((t) => t.result === undefined);
   const toolsOpen = showTools ?? !!props.live;
+  const reasoningOpen = showReasoning ?? !!props.thinkingNow;
   return (
     <div className="extras">
       <div className="disclosures">
-        {reasoning &&
-          (props.thinkingNow ? (
-            <span className="disc"><span className="shimmer">Thinking…</span></span>
-          ) : (
-            <button className="disc" aria-expanded={showReasoning} onClick={() => setShowReasoning((o) => !o)}>
-              {props.thinkingMs != null ? `Thought for ${secs(props.thinkingMs)}` : "Thoughts"}
-              <Icon name="chevronRight" size={10} stroke={3} />
-            </button>
-          ))}
+        {reasoning && (
+          <button className="disc" aria-expanded={reasoningOpen} onClick={() => setShowReasoning(!reasoningOpen)}>
+            {props.thinkingNow ? <span className="shimmer">Thinking…</span> : props.thinkingMs != null ? `Thought for ${secs(props.thinkingMs)}` : "Thoughts"}
+            <Icon name="chevronRight" size={10} stroke={3} />
+          </button>
+        )}
         {tools.length > 0 && (
           <button className="disc" aria-expanded={toolsOpen} onClick={() => setShowTools(!toolsOpen)}>
             {pending ? <span className="shimmer">Using tools…</span> : `Used ${tools.length} ${tools.length === 1 ? "tool" : "tools"}`}
@@ -78,9 +64,9 @@ export function ReplyExtras(props: {
         )}
       </div>
       {reasoning && (
-        <Collapse open={!!props.thinkingNow || showReasoning}>
+        <Collapse open={reasoningOpen}>
           <div className={"reasoning-text" + (props.thinkingNow ? " live" : "")}>
-            <div>{props.thinkingNow ? <LiveText text={reasoning} /> : reasoning}</div>
+            <Markdown text={reasoning} streaming={props.thinkingNow} />
           </div>
         </Collapse>
       )}

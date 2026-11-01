@@ -204,9 +204,13 @@ input, textarea, select { font: inherit; color: var(--text); }
 .disc:hover { color: var(--text-3); }
 .disc svg { transition: transform 160ms ease; }
 .disc[aria-expanded="true"] svg { transform: rotate(90deg); }
-.reasoning-text { padding: 8px 0 0 12px; color: var(--muted); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; cursor: auto; }
+.reasoning-text { margin: 8px 0 2px 4px; padding: 2px 0 2px 12px; border-left: 2px solid var(--separator-strong); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; cursor: auto; }
+.reasoning-text .md { font-size: 13px; line-height: 1.6; color: var(--muted); }
+.reasoning-text .md > * + * { margin-top: 8px; }
+.reasoning-text .md h1, .reasoning-text .md h2, .reasoning-text .md h3, .reasoning-text .md h4, .reasoning-text .md strong { font-size: 13px; color: var(--secondary); }
+.reasoning-text .md ul, .reasoning-text .md ol { gap: 3px; }
 /* While thinking: a short window onto the newest lines, older ones fading out at the top. */
-.reasoning-text.live { max-height: calc(1.6em * 6 + 8px); display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 45%); mask-image: linear-gradient(transparent, #000 45%); }
+.reasoning-text.live { max-height: 240px; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 45%); mask-image: linear-gradient(transparent, #000 45%); }
 .extras { display: flex; flex-direction: column; }
 .extras .trace { margin-top: 8px; }
 .collapse { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 280ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 200ms ease; }

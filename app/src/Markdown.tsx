@@ -35,7 +35,8 @@ function rehypeWords() {
     node.children = node.children.flatMap((c): HNode[] => {
       if (c.type !== "text") return walk(c), [c];
       if (!c.value?.trim()) return [c];
-      return c.value.match(/^\s+|\S+\s*/g)!.map((w) => (/^\s/.test(w) ? { type: "text", value: w } : { type: "element", tagName: "hw", properties: {}, children: [{ type: "text", value: w }] }));
+      // Whitespace stays outside the word boxes: a soft line break inside an inline-block breaks the layout.
+      return c.value.match(/\s+|\S+/g)!.map((w) => (/^\s/.test(w) ? { type: "text", value: w } : { type: "element", tagName: "hw", properties: {}, children: [{ type: "text", value: w }] }));
     });
   };
   return (tree: HNode) => walk(tree);
