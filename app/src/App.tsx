@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings } from "./api";
 import { Composer } from "./Composer";
-import { onMenu, onSettingsChanged, setModelMenu } from "./native";
+import { onMenu, onOpenSettings, setModelMenu } from "./native";
+import { isPane, SettingsModal, type Pane } from "./Settings";
 import { Sidebar, WindowButtons } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
 
@@ -20,6 +21,9 @@ export function App() {
   // Model for the open chat, or for the next new chat (starts at Settings › Model).
   const [preset, setPreset] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  // Settings sheet: mounted while open or animating closed.
+  const [sheet, setSheet] = useState<{ pane: Pane; closing: boolean } | null>(null);
+  const showSettings = (pane: string) => setSheet({ pane: isPane(pane) ? pane : "general", closing: false });
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -42,7 +46,7 @@ export function App() {
         .then(() => setOffline(false))
         .catch(() => (setOffline(true), setTimeout(boot, 1500)));
     boot();
-    const offSettings = onSettingsChanged(() => api.settings().then((s) => applySettings(s, chatIdRef.current === null)));
+    const offSettings = onOpenSettings(showSettings);
     const offModel = watchModel(setModel);
     return () => (offSettings(), offModel());
   }, []);
@@ -78,7 +82,8 @@ export function App() {
   // Menu bar / tray actions. Handlers read the latest state through this ref.
   const menuRef = useRef<(id: string) => void>(() => {});
   menuRef.current = (id) => {
-    if (id === "new_chat") newChat();
+    if (id === "settings") showSettings("general");
+    else if (id === "new_chat") newChat();
     else if (id === "toggle_sidebar") setSidebarHidden((h) => !h);
     else if (id === "unload") api.unloadModel();
     else if (id.startsWith("model:") && !busy) choosePreset(id.slice(6));
@@ -189,6 +194,16 @@ export function App() {
           />
         </div>
       </main>
+
+      {sheet && (
+        <SettingsModal
+          pane={sheet.pane}
+          closing={sheet.closing}
+          onClose={() => setSheet((s) => s && { ...s, closing: true })}
+          onClosed={() => setSheet(null)}
+          onSaved={(s) => applySettings(s, chatIdRef.current === null)}
+        />
+      )}
     </div>
   );
 }

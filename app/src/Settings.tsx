@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type Memory, type Preset, type Settings } from "./api";
 import { Icon, type IconName } from "./icons";
-import { announceSettings, onSettingsPane } from "./native";
+import { NativeControl } from "./NativeControl";
 
-type Pane = "general" | "models" | "tools" | "memory" | "voice";
+export type Pane = "general" | "models" | "tools" | "memory" | "voice";
+// True once the sheet has finished animating in: native controls only float over a still page.
+const Settled = createContext(false);
 const PANES: { id: Pane; label: string; icon: IconName; keywords: string }[] = [
   { id: "general", label: "General", icon: "general", keywords: "model idle unload think budget system prompt memory" },
   { id: "models", label: "Models", icon: "models", keywords: "model size speed humaneval qwen mtp" },
@@ -18,39 +20,59 @@ const IDLE_OPTIONS = [
   { value: 0, label: "Never" },
 ];
 
-function initialPane(): Pane {
-  try {
-    const p = localStorage.getItem("settings-pane") as Pane | null;
-    if (p && PANES.some((x) => x.id === p)) return p;
-  } catch {}
-  return "general";
-}
+export const isPane = (p: string): p is Pane => PANES.some((x) => x.id === p);
 
-export function SettingsWindow() {
+// Settings as a sheet over the chat window. Mount it to open; `onClosed` fires after the
+// close animation so the parent can unmount it.
+export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: () => void; onClosed: () => void; onSaved: (s: Settings) => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [offline, setOffline] = useState(false);
   const [q, setQ] = useState("");
+  const [phase, setPhase] = useState<"enter" | "open" | "settled" | "closing">("enter");
+  const panelRef = useRef<HTMLDivElement>(null);
   // Back/forward like System Settings: a history of panes and a cursor.
-  const [nav, setNav] = useState<{ stack: Pane[]; at: number }>(() => ({ stack: [initialPane()], at: 0 }));
+  const [nav, setNav] = useState<{ stack: Pane[]; at: number }>(() => ({ stack: [props.pane], at: 0 }));
   const pane = nav.stack[nav.at];
-
   const go = (p: Pane) => setNav((n) => (n.stack[n.at] === p ? n : { stack: [...n.stack.slice(0, n.at + 1), p], at: n.at + 1 }));
 
+  useEffect(() => go(props.pane), [props.pane]);
+
   useEffect(() => {
+    let alive = true;
     const boot = () =>
       Promise.all([api.settings().then(setSettings), api.models().then(setPresets), api.memories().then(setMemories)])
         .then(() => setOffline(false))
-        .catch(() => (setOffline(true), setTimeout(boot, 1500)));
+        .catch(() => alive && (setOffline(true), setTimeout(boot, 1500)));
     boot();
-    return onSettingsPane((p) => PANES.some((x) => x.id === p) && go(p as Pane));
+    // Two frames so the starting styles are painted before the transition.
+    requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
+    // With Reduce Motion there's no transform transition to wait for.
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) setTimeout(() => setPhase((p) => (p === "open" ? "settled" : p)), 200);
+    panelRef.current?.focus();
+    return () => void (alive = false);
   }, []);
 
-  // Every change saves straight away and tells the main window.
+  useEffect(() => {
+    if (!props.closing) return;
+    setPhase("closing");
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) setTimeout(props.onClosed, 160);
+  }, [props.closing]);
+
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [props.onClose]);
+
+  // Every change saves straight away and applies to the chat window.
   const save = (patch: Partial<Settings>) => {
     setSettings((s) => s && { ...s, ...patch });
-    api.saveSettings(patch).then((s) => (setSettings((cur) => (cur ? { ...s, systemPrompt: cur.systemPrompt } : s)), announceSettings()));
+    api.saveSettings(patch).then((saved) => {
+      setSettings((cur) => (cur ? { ...saved, systemPrompt: cur.systemPrompt } : saved));
+      props.onSaved(saved);
+    });
   };
 
   const visible = useMemo(() => {
@@ -62,51 +84,70 @@ export function SettingsWindow() {
   const s = settings;
 
   return (
-    <div className="app settings-window">
-      <nav className="settings-nav glass" aria-label="Settings sections">
-        <div className="nav-head" data-tauri-drag-region />
-        <label className="search">
-          <Icon name="search" size={13} stroke={2.2} />
-          <input aria-label="Search settings" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
-        </label>
-        {visible.map((p) => (
-          <button key={p.id} className={"nav-item" + (p.id === pane ? " current" : "")} aria-current={p.id === pane ? "page" : undefined} onClick={() => go(p.id)}>
-            <Icon name={p.icon} size={15} />
-            {p.label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="settings-main">
-        <div className="settings-toolbar" data-tauri-drag-region>
-          <div className="history">
-            <button className="icon-btn" aria-label="Back" disabled={nav.at === 0} onClick={() => setNav((n) => ({ ...n, at: n.at - 1 }))}>
-              <Icon name="chevronLeft" size={12} stroke={2.8} />
+    <div className="modal-root" data-phase={phase}>
+      <div className="modal-backdrop" onMouseDown={props.onClose} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        tabIndex={-1}
+        className="settings-modal"
+        onTransitionEnd={(e) => {
+          if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
+          if (phase === "open") setPhase("settled");
+          if (phase === "closing") props.onClosed();
+        }}
+      >
+        <nav className="settings-nav" aria-label="Settings sections">
+          <label className="search">
+            <Icon name="search" size={13} stroke={2.2} />
+            <input aria-label="Search settings" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+          </label>
+          {visible.map((p) => (
+            <button key={p.id} className={"nav-item" + (p.id === pane ? " current" : "")} aria-current={p.id === pane ? "page" : undefined} onClick={() => go(p.id)}>
+              <Icon name={p.icon} size={15} />
+              {p.label}
             </button>
-            <button className="icon-btn" aria-label="Forward" disabled={nav.at === nav.stack.length - 1} onClick={() => setNav((n) => ({ ...n, at: n.at + 1 }))}>
-              <Icon name="chevronRight" size={12} stroke={2.8} />
+          ))}
+        </nav>
+
+        <main className="settings-main">
+          <div className="settings-toolbar">
+            <div className="history">
+              <button className="icon-btn" aria-label="Back" disabled={nav.at === 0} onClick={() => setNav((n) => ({ ...n, at: n.at - 1 }))}>
+                <Icon name="chevronLeft" size={12} stroke={2.8} />
+              </button>
+              <button className="icon-btn" aria-label="Forward" disabled={nav.at === nav.stack.length - 1} onClick={() => setNav((n) => ({ ...n, at: n.at + 1 }))}>
+                <Icon name="chevronRight" size={12} stroke={2.8} />
+              </button>
+            </div>
+            <h1>{title}</h1>
+            <button className="icon-btn close" aria-label="Close settings" title="Close (Esc)" onClick={props.onClose}>
+              <Icon name="close" size={11} stroke={2.4} />
             </button>
           </div>
-          <h1 data-tauri-drag-region>{title}</h1>
-        </div>
 
-        <div className="settings-scroll">
-          <div className="settings-content">
-            {offline && <div className="banner">Waiting for the harness server on 127.0.0.1:8787…</div>}
-            {s && (
-              <>
-                {(pane === "general" || pane === "models") && <ModelGroup s={s} presets={presets} save={save} />}
-                {pane === "models" && <ModelList presets={presets} current={s.defaultModel} />}
-                {pane === "general" && <RuntimeGroup s={s} presets={presets} save={save} />}
-                {pane === "general" && <SystemPrompt value={s.systemPrompt} save={save} />}
-                {(pane === "general" || pane === "memory") && <MemoryList memories={memories} setMemories={setMemories} />}
-                {pane === "tools" && <Placeholder>Tools arrive in Milestone 2. Anything that writes or deletes files will ask first.</Placeholder>}
-                {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
-              </>
-            )}
+          <div className="settings-scroll" data-native-clip>
+            <div className="settings-content" key={pane}>
+              <Settled.Provider value={phase === "settled"}>
+                {offline && <div className="banner">Waiting for the harness server on 127.0.0.1:8787…</div>}
+                {s && (
+                  <>
+                    {(pane === "general" || pane === "models") && <ModelGroup s={s} presets={presets} save={save} />}
+                    {pane === "models" && <ModelList presets={presets} current={s.defaultModel} />}
+                    {pane === "general" && <RuntimeGroup s={s} presets={presets} save={save} />}
+                    {pane === "general" && <SystemPrompt value={s.systemPrompt} save={save} />}
+                    {(pane === "general" || pane === "memory") && <MemoryList memories={memories} setMemories={setMemories} />}
+                    {pane === "tools" && <Placeholder>Tools arrive in Milestone 2. Anything that writes or deletes files will ask first.</Placeholder>}
+                    {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
+                  </>
+                )}
+              </Settled.Provider>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
@@ -135,9 +176,10 @@ function Popup<T extends string | number>(props: { id: string; value: T; options
   );
 }
 
-// WebKit's native switch control (drawn by the system, follows the accent color).
+// The system NSSwitch (see NativeControl).
 function Switch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }) {
-  return <input type="checkbox" {...{ switch: "" }} aria-label={label} checked={on} onChange={(e) => onChange(e.target.checked)} />;
+  const settled = useContext(Settled);
+  return <NativeControl kind="switch" label={label} value={on ? 1 : 0} active={settled} onChange={(v) => onChange(v >= 0.5)} />;
 }
 
 function ModelGroup({ s, presets, save }: { s: Settings; presets: Preset[]; save: (p: Partial<Settings>) => void }) {
@@ -182,6 +224,7 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
   const size = p?.info.size?.replace(" · 4-bit", "");
   const idle = IDLE_OPTIONS.some((o) => o.value === s.idleMinutes) ? IDLE_OPTIONS : [...IDLE_OPTIONS, { value: s.idleMinutes, label: `After ${s.idleMinutes} minutes` }];
   const max = 4096;
+  const settled = useContext(Settled);
   const budget = Math.min(s.thinkingBudget, max);
   return (
     <section className="group" aria-label="Runtime">
@@ -201,23 +244,24 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
       </div>
       <div className="row slider-row">
         <div className="slider-head">
-          <label htmlFor="budget">Thinking budget</label>
+          <span>Thinking budget</span>
           <span>{budget === 0 ? "Off" : `${budget / 1024}K tokens`}</span>
         </div>
-        {/* Native slider; the datalist gives it system tick marks. */}
-        <input
-          id="budget"
-          type="range"
+        {/* The system NSSlider with tick marks (see NativeControl). */}
+        <NativeControl
+          kind="slider"
+          label="Thinking budget"
           min={0}
           max={max}
           step={1024}
-          list="budget-ticks"
+          ticks={5}
           value={budget}
-          onChange={(e) => save({ thinkingBudget: Number(e.target.value) })}
+          active={settled}
+          onChange={(v) => {
+            const snapped = Math.round(v / 1024) * 1024;
+            if (snapped !== budget) save({ thinkingBudget: snapped });
+          }}
         />
-        <datalist id="budget-ticks">
-          {[0, 1024, 2048, 3072, 4096].map((v) => <option key={v} value={v} />)}
-        </datalist>
         {p?.mtp && <div className="sub">Not applied to MTP models yet: mlx-vlm refuses a budget with a speculative drafter.</div>}
       </div>
     </section>

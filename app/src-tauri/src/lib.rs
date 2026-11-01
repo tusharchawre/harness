@@ -3,9 +3,11 @@ use std::time::Duration;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, Submenu, SubmenuBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, LogicalPosition, Manager, RunEvent, TitleBarStyle, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewWindow, Wry};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+mod native_controls;
+
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 // The bun sidecar holds all agent logic; Rust only starts and stops it,
@@ -19,9 +21,6 @@ struct ModelItem {
     id: String,
     label: String,
 }
-
-// Where the native traffic lights sit: inside the floating sidebar's header row.
-const TRAFFIC_LIGHTS: LogicalPosition<f64> = LogicalPosition { x: 27.0, y: 39.0 };
 
 fn glass(window: &WebviewWindow) {
     if let Err(e) = apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, Some(NSVisualEffectState::FollowsWindowActiveState), None) {
@@ -37,26 +36,10 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+// Settings is a modal sheet inside the main window.
 fn open_settings(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("settings") {
-        let _ = w.show();
-        let _ = w.set_focus();
-        return;
-    }
-    // The UI picks the Settings screen from the window label.
-    let built = WebviewWindowBuilder::new(app, "settings", WebviewUrl::default())
-        .title("Settings")
-        .inner_size(760.0, 640.0)
-        .min_inner_size(640.0, 480.0)
-        .transparent(true)
-        .title_bar_style(TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .traffic_light_position(TRAFFIC_LIGHTS)
-        .build();
-    match built {
-        Ok(w) => glass(&w),
-        Err(e) => eprintln!("settings window: {e}"),
-    }
+    show_main(app);
+    let _ = app.emit_to("main", "menu", "settings");
 }
 
 #[tauri::command]
@@ -92,11 +75,6 @@ fn accent_color() -> Option<String> {
     }
     #[allow(unreachable_code)]
     None
-}
-
-#[tauri::command]
-fn open_settings_window(app: AppHandle) {
-    open_settings(&app);
 }
 
 #[tauri::command]
@@ -178,7 +156,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, open_settings_window, show_main_window, reveal])
+        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, show_main_window, reveal, native_controls::native_control])
         .setup(|app| {
             build_menus(app.handle())?;
             if let Some(main) = app.get_webview_window("main") {

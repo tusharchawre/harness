@@ -1,11 +1,8 @@
 // Thin wrapper over the Tauri APIs so the UI still runs in a plain browser (dev at :1420).
 import { invoke } from "@tauri-apps/api/core";
-import { emit, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 
 export const isTauri = "__TAURI_INTERNALS__" in window;
-
-export const windowLabel = (): string => (isTauri ? getCurrentWindow().label : new URLSearchParams(location.search).get("window") ?? "main");
 
 // Menu bar, tray and keyboard-shortcut actions arrive as "menu" events with the item id.
 export function onMenu(fn: (id: string) => void): () => void {
@@ -18,33 +15,30 @@ export function setModelMenu(models: { id: string; label: string }[], active: st
   if (isTauri) invoke("set_model_menu", { models, active, loaded }).catch(console.error);
 }
 
-// Panes: general | models | tools | memory | voice. Both windows share localStorage,
-// so a freshly opened Settings window reads the pane from there; an open one gets the event.
+// Settings is a modal in the main window. Panes: general | models | tools | memory | voice.
 export function openSettings(pane = "general") {
-  try {
-    localStorage.setItem("settings-pane", pane);
-  } catch {}
-  if (!isTauri) return void window.open("/?window=settings", "settings", "width=760,height=640");
-  emit("settings-pane", pane);
-  invoke("open_settings_window");
+  window.dispatchEvent(new CustomEvent("open-settings", { detail: pane }));
+}
+export function onOpenSettings(fn: (pane: string) => void): () => void {
+  const h = (e: Event) => fn((e as CustomEvent<string>).detail);
+  window.addEventListener("open-settings", h);
+  return () => window.removeEventListener("open-settings", h);
 }
 
-export function onSettingsPane(fn: (pane: string) => void): () => void {
+// Real AppKit controls floated over the page (see src-tauri/src/native_controls.rs).
+type Rect = { x: number; y: number; w: number; h: number };
+export type NativeSpec = { id: string; kind: "slider" | "switch"; frame: Rect; clip: Rect; value: number; min?: number; max?: number; ticks?: number; label?: string };
+export const nativeControls = isTauri;
+export function upsertNative(spec: NativeSpec) {
+  invoke("native_control", { spec }).catch(console.error);
+}
+export function removeNative(id: string) {
+  invoke("native_control", { remove: id }).catch(console.error);
+}
+export function onNativeControl(fn: (id: string, value: number) => void): () => void {
   if (!isTauri) return () => {};
-  const off = listen<string>("settings-pane", (e) => fn(e.payload));
+  const off = listen<{ id: string; value: number }>("native-control", (e) => fn(e.payload.id, e.payload.value));
   return () => void off.then((f) => f());
-}
-
-// Settings window → main window: settings were saved, re-read them.
-export const announceSettings = () => (isTauri ? emit("settings-changed") : Promise.resolve());
-export function onSettingsChanged(fn: () => void): () => void {
-  if (!isTauri) return () => {};
-  const off = listen("settings-changed", () => fn());
-  return () => void off.then((f) => f());
-}
-
-export function showMainWindow() {
-  if (isTauri) invoke("show_main_window");
 }
 
 export function reveal(path: string) {
