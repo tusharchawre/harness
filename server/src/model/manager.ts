@@ -160,11 +160,19 @@ function killGroup(pid: number, sig: NodeJS.Signals) {
 }
 
 // A previous server run that died hard (e.g. bun --watch restart) can leave mlx_vlm.server behind.
+// Only if that PID is still our uv/mlx_vlm process group: PIDs get reused, and killing a reused
+// one's group could take down an unrelated app (or Harness itself).
 function killStale() {
   if (!existsSync(config.pidFile)) return;
   const pid = Number(readFileSync(config.pidFile, "utf8"));
-  if (pid) killGroup(pid, "SIGTERM");
   rmSync(config.pidFile, { force: true });
+  if (!pid) return;
+  const ps = Bun.spawnSync(["ps", "-o", "pgid=,command=", "-p", String(pid)]).stdout.toString().trim();
+  const [pgid, ...cmd] = ps.split(/\s+/);
+  if (Number(pgid) === pid && /mlx_vlm|\buv\b/.test(cmd.join(" "))) {
+    console.log(`[model] stopping leftover mlx_vlm.server (pid ${pid})`);
+    killGroup(pid, "SIGTERM");
+  }
 }
 
 async function ping(url: string) {

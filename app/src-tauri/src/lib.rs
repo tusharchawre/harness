@@ -203,6 +203,9 @@ pub fn run() {
                 if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
                     // Ask the server to stop mlx_vlm.server cleanly, then make sure it's gone.
                     let _ = child.write(b"shutdown\n");
+                    // stdin can be closed under Tauri, so also send SIGTERM: the server's handler
+                    // stops mlx_vlm.server and clears its PID file. kill() below is SIGKILL (no cleanup).
+                    let _ = std::process::Command::new("kill").arg("-TERM").arg(child.pid().to_string()).status();
                     std::thread::sleep(Duration::from_millis(800));
                     let _ = child.kill();
                 }

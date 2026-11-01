@@ -104,7 +104,9 @@ Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`
 ### T8 Ship — status: done (installed; API smoke test passed: think on/off, title gen, settings GET/PUT; UI checks left to user)
 - Rebuild, install to /Applications, smoke test: send a message with Think on and off, open Settings (⌘,), change a setting, reopen. Report results to the user.
 
-### T9 App quit during first model load — status: todo
+### T9 App quit during first model load — status: done
+- Cause: on start the server SIGTERMed the process group of whatever PID `mlx.pid` held, unchecked. Tauri SIGKILLs the sidecar on quit (stdin "shutdown" doesn't arrive), so the file went stale; a reused PID could be the new app. Fix: only kill if that PID is still a uv/mlx_vlm group leader; the app now SIGTERMs the sidecar before SIGKILL so it cleans up. Verified: decoy PID survives, fake mlx is stopped, cold launch + immediate message loads and replies, quit leaves no mlx_vlm and no PID file.
+- Was:
 - During T8's first smoke run the harness process died while the model was loading. There was no crash report, and it didn't happen again after a relaunch. The first `POST /api/chats` right after launch also returned an empty body (the server probably wasn't up yet). Reproduce with a cold launch, then send a message right away; check the sidecar parent-PID watch and the stdin "shutdown" handling in `server/src/index.ts`.
 
 ## Later milestones (not now)
