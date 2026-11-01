@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { ToolStep } from "./api";
-import { Icon, type IconName } from "./icons";
+import { Icon } from "./icons";
 import { Markdown } from "./Markdown";
 
-// What sits above a reply's text: thinking and tool use, each its own collapsible card.
+// What sits above a reply's text: thinking and tool use, each a collapsible section with a plain label.
 // Thinking is open while the model reasons (newest lines kept in view) and folds to
 // "Thought for Ns" once the answer starts; a click on the header toggles it either way.
 // Tool rows slide in with a spinner, then settle to result and time.
@@ -16,11 +16,10 @@ function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   );
 }
 
-function Card(props: { icon: IconName; label: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
+function Fold(props: { label: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
-    <section className={"card" + (props.open ? " open" : "")}>
-      <button className="card-head" aria-expanded={props.open} onClick={props.onToggle}>
-        <Icon name={props.icon} size={13} stroke={1.8} />
+    <section className={"fold" + (props.open ? " open" : "")}>
+      <button className="fold-head" aria-expanded={props.open} onClick={props.onToggle}>
         <span className="label">{props.label}</span>
         <Icon name="chevronDown" size={10} stroke={3} />
       </button>
@@ -40,7 +39,7 @@ function Thoughts({ text, live }: { text: string; live: boolean }) {
   return (
     <div
       ref={ref}
-      className={"card-body thoughts" + (live ? " live" : "")}
+      className={"fold-body thoughts" + (live ? " live" : "")}
       onScroll={(e) => {
         const el = e.currentTarget;
         stick.current = el.scrollHeight - el.clientHeight - el.scrollTop < 24;
@@ -87,23 +86,21 @@ export function ReplyExtras(props: {
   return (
     <div className="extras">
       {reasoning && (
-        <Card
-          icon="memory"
+        <Fold
           open={reasoningOpen}
           onToggle={() => setShowReasoning(!reasoningOpen)}
           label={props.thinkingNow ? <span className="shimmer">Thinking…</span> : props.thinkingMs != null ? `Thought for ${secs(props.thinkingMs)}` : "Thoughts"}
         >
           <Thoughts text={reasoning} live={!!props.thinkingNow} />
-        </Card>
+        </Fold>
       )}
       {tools.length > 0 && (
-        <Card
-          icon="tools"
+        <Fold
           open={toolsOpen}
           onToggle={() => setShowTools(!toolsOpen)}
           label={pending ? <span className="shimmer">Using tools…</span> : `Used ${tools.length} ${tools.length === 1 ? "tool" : "tools"}`}
         >
-          <div className="card-body trace">
+          <div className="fold-body trace">
             {tools.map((t) => (
               <div key={t.id} className="trace-row">
                 <span className="call" title={callLabel(t)}>{callLabel(t)}</span>
@@ -112,7 +109,7 @@ export function ReplyExtras(props: {
               </div>
             ))}
           </div>
-        </Card>
+        </Fold>
       )}
     </div>
   );
