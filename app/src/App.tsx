@@ -1,15 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings } from "./api";
+import { api, parseJSON, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings, type ToolStep } from "./api";
 import { Composer } from "./Composer";
 import { Icon } from "./icons";
 import { useFollow } from "./follow";
 import { Markdown } from "./Markdown";
+import { ReplyExtras } from "./Reply";
 import { onMenu, onOpenSettings, setModelMenu } from "./native";
 import { isPane, SettingsModal, type Pane } from "./Settings";
 import { Sidebar, WindowButtons } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
 
-type Draft = { chatId: string; reasoning: string; content: string; status: string };
+type Draft = {
+  chatId: string;
+  thinking: boolean;
+  reasoning: string;
+  content: string;
+  status: string;
+  tools: ToolStep[];
+  thinkStart: number; // first reasoning chunk (0 = none yet)
+  thinkMs: number | null; // reasoning → first answer chunk
+};
 
 export function App() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -141,15 +151,18 @@ export function App() {
     }
     const ac = new AbortController();
     abortRef.current = ac;
-    setDraft({ chatId: id, reasoning: "", content: "", status: "sending" });
+    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], thinkStart: 0, thinkMs: null });
     // The user may open another chat mid-reply: only touch the thread while this chat is on screen.
     const here = () => chatIdRef.current === id;
     try {
       await sendMessage(id, text, thinking, (e) => {
         if (e.event === "user") (delivered = true), here() && setMsgs((m) => [...m, e.data]), refreshChats(); // new chat shows up right away
         else if (e.event === "status") setDraft((d) => d && { ...d, status: e.data.status });
-        else if (e.event === "reasoning") setDraft((d) => d && { ...d, reasoning: d.reasoning + e.data.text });
-        else if (e.event === "content") setDraft((d) => d && { ...d, content: d.content + e.data.text });
+        else if (e.event === "reasoning") setDraft((d) => d && { ...d, reasoning: d.reasoning + e.data.text, thinkStart: d.thinkStart || performance.now() });
+        else if (e.event === "content")
+          setDraft((d) => d && { ...d, content: d.content + e.data.text, thinkMs: d.thinkMs ?? (d.thinkStart ? performance.now() - d.thinkStart : null) });
+        else if (e.event === "tool_call") setDraft((d) => d && { ...d, tools: [...d.tools, e.data] });
+        else if (e.event === "tool_result") setDraft((d) => d && { ...d, tools: d.tools.map((t) => (t.id === e.data.id ? { ...t, ...e.data } : t)) });
         else if (e.event === "done") here() && setMsgs((m) => [...m, e.data]);
         else if (e.event === "error") here() && setError(e.data.message);
       }, ac.signal);
@@ -250,6 +263,7 @@ export function App() {
                 </div>
               ) : (
                 <div key={m.id} className="reply">
+                  <ReplyExtras reasoning={m.reasoning} thinkingMs={m.thinking_ms} tools={parseJSON<ToolStep[]>(m.tools) ?? []} />
                   <Markdown text={m.content} />
                   <div className={"meta-row" + (m.id === lastId ? " last" : "")}>
                     <span className="meta">{[m.model, m.tokens_per_sec != null && `${m.tokens_per_sec.toFixed(1)} tok/s`].filter(Boolean).join(" · ")}</span>
@@ -267,7 +281,13 @@ export function App() {
             )}
             {draft && draft.chatId === chatId && (
               <div className="reply">
-                {draft.content ? <Markdown text={draft.content} streaming /> : <div className="meta shimmer">{draft.status === "loading" ? "Loading model…" : "Thinking…"}</div>}
+                {draft.status === "loading" && !draft.reasoning && !draft.content ? (
+                  <div className="meta shimmer">Loading model…</div>
+                ) : !draft.reasoning && !draft.content && !draft.tools.length ? (
+                  <div className="meta shimmer">{draft.thinking ? "Thinking…" : "Writing…"}</div>
+                ) : null}
+                <ReplyExtras reasoning={draft.reasoning || null} thinkingMs={draft.thinkMs} tools={draft.tools} thinkingNow={!draft.content} live />
+                {draft.content && <Markdown text={draft.content} streaming />}
               </div>
             )}
             {error && (
