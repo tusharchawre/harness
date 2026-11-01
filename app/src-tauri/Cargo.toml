@@ -11,11 +11,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSButton", "NSCell", "NSColor", "NSColorSpace", "NSControl", "NSImage", "NSMenu", "NSMenuItem", "NSPopUpButton", "NSResponder", "NSSearchField", "NSSegmentedControl", "NSSlider", "NSSwitch", "NSText", "NSTextField", "NSView", "objc2-core-foundation"] }
-objc2-foundation = "0.3"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSColor", "NSColorSpace", "objc2-core-foundation"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
 tauri = { version = "2", features = ["image-png", "macos-private-api", "tray-icon"] }
 tauri-plugin-shell = "2"
 window-vibrancy = "0.8"
