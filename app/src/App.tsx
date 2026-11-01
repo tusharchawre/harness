@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, parseJSON, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings, type ToolStep } from "./api";
+import { api, parseJSON, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings, type Source, type ToolStep } from "./api";
 import { Composer } from "./Composer";
 import { Icon } from "./icons";
 import { useFollow } from "./follow";
 import { Markdown } from "./Markdown";
 import { ReplyExtras } from "./Reply";
+import { SourceSheet } from "./SourceSheet";
 import { onMenu, onOpenSettings, setModelMenu } from "./native";
 import { isPane, SettingsModal, type Pane } from "./Settings";
 import { Sidebar, WindowButtons } from "./Sidebar";
@@ -17,6 +18,7 @@ type Draft = {
   content: string;
   status: string;
   tools: ToolStep[];
+  sources: Source[];
   thinkStart: number; // first reasoning chunk (0 = none yet)
   thinkMs: number | null; // reasoning → first answer chunk
 };
@@ -34,6 +36,10 @@ export function App() {
   // Model for the open chat, or for the next new chat (starts at Settings › Model).
   const [preset, setPreset] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  // Source sheet on the right; `key` is "<message id>:<index>" so the active chip can be tinted.
+  const [source, setSource] = useState<{ key: string; src: Source; closing: boolean } | null>(null);
+  const openSource = (key: string, src: Source) => setSource((s) => (s?.key === key && !s.closing ? { ...s, closing: true } : { key, src, closing: false }));
+  const closeSource = () => setSource((s) => s && { ...s, closing: true });
   const [retitled, setRetitled] = useState<string | null>(null); // chat whose generated title is washing in
   // Settings sheet: mounted while open or animating closed.
   const [sheet, setSheet] = useState<{ pane: Pane; closing: boolean; key: number } | null>(null);
@@ -151,7 +157,7 @@ export function App() {
     }
     const ac = new AbortController();
     abortRef.current = ac;
-    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], thinkStart: 0, thinkMs: null });
+    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], sources: [], thinkStart: 0, thinkMs: null });
     // The user may open another chat mid-reply: only touch the thread while this chat is on screen.
     const here = () => chatIdRef.current === id;
     try {
@@ -161,6 +167,7 @@ export function App() {
         else if (e.event === "reasoning") setDraft((d) => d && { ...d, reasoning: d.reasoning + e.data.text, thinkStart: d.thinkStart || performance.now() });
         else if (e.event === "content")
           setDraft((d) => d && { ...d, content: d.content + e.data.text, thinkMs: d.thinkMs ?? (d.thinkStart ? performance.now() - d.thinkStart : null) });
+        else if (e.event === "sources") setDraft((d) => d && { ...d, sources: e.data });
         else if (e.event === "tool_call") setDraft((d) => d && { ...d, tools: [...d.tools, e.data] });
         else if (e.event === "tool_result") setDraft((d) => d && { ...d, tools: d.tools.map((t) => (t.id === e.data.id ? { ...t, ...e.data } : t)) });
         else if (e.event === "done") here() && setMsgs((m) => [...m, e.data]);
@@ -194,8 +201,21 @@ export function App() {
 
   function pickChat(id: string) {
     setChatId(id);
+    closeSource();
     inputRef.current?.focus();
   }
+
+  const chips = (key: string | number, list: Source[]) =>
+    list.length > 0 && (
+      <div className="chips">
+        {list.map((s, i) => (
+          <button key={i} className={"chip" + (source?.key === `${key}:${i}` && !source.closing ? " active" : "")} title={s.path} onClick={() => openSource(`${key}:${i}`, s)}>
+            <Icon name="doc" size={11} stroke={2} />
+            {s.title ?? s.path.split("/").pop()}
+          </button>
+        ))}
+      </div>
+    );
 
   // Esc stops a reply; typing anywhere outside a field goes to the composer.
   const keysRef = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -203,7 +223,9 @@ export function App() {
     if (sheet || e.defaultPrevented) return;
     const el = document.activeElement;
     const inField = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
-    if (e.key === "Escape" && busy && (el === document.body || el === inputRef.current)) abortRef.current?.abort(); // not while a menu has focus
+    const free = el === document.body || el === inputRef.current; // not while a menu or field has focus
+    if (e.key === "Escape" && busy && free) abortRef.current?.abort();
+    else if (e.key === "Escape" && source && !source.closing && !inField) closeSource();
     else if (!inField && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) inputRef.current?.focus();
   };
   useEffect(() => {
@@ -265,6 +287,7 @@ export function App() {
                 <div key={m.id} className="reply">
                   <ReplyExtras reasoning={m.reasoning} thinkingMs={m.thinking_ms} tools={parseJSON<ToolStep[]>(m.tools) ?? []} />
                   <Markdown text={m.content} />
+                  {chips(m.id, parseJSON<Source[]>(m.sources) ?? [])}
                   <div className={"meta-row" + (m.id === lastId ? " last" : "")}>
                     <span className="meta">{[m.model, m.tokens_per_sec != null && `${m.tokens_per_sec.toFixed(1)} tok/s`].filter(Boolean).join(" · ")}</span>
                     <div className="actions">
@@ -288,6 +311,7 @@ export function App() {
                 ) : null}
                 <ReplyExtras reasoning={draft.reasoning || null} thinkingMs={draft.thinkMs} tools={draft.tools} thinkingNow={!draft.content} live />
                 {draft.content && <Markdown text={draft.content} streaming />}
+                {chips("draft", draft.sources)}
               </div>
             )}
             {error && (
@@ -313,6 +337,8 @@ export function App() {
           />
         </div>
       </main>
+
+      {source && <SourceSheet key={source.key} source={source.src} closing={source.closing} onClose={closeSource} onClosed={() => setSource((s) => (s?.closing ? null : s))} />}
 
       {sheet && (
         <SettingsModal

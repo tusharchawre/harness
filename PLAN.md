@@ -36,6 +36,7 @@ Task board for the Harness UI work. Agents: read this file and `README.md`, then
 | `app/src/Markdown.tsx` | react-markdown + remark-gfm renderer, streaming word wash-in, code blocks |
 | `app/src/highlight.ts` | Shiki (JS regex engine, Xcode-like light/dark themes), cached |
 | `app/src/follow.ts` | Auto-follow scrolling + "↓ Latest" pill logic |
+| `app/src/SourceSheet.tsx` | Right-hand source preview: note as markdown, cited block highlighted, Show in Finder |
 | `app/src/Reply.tsx` | "Thought for Ns" / "Used N tools" disclosures |
 | `app/src/Settings.tsx` | Settings modal (System Settings style); `openSettings(pane)` in `native.ts` opens it |
 | `app/src/native.ts` | Tauri wrappers: menu events, model menu sync, accent colour, `openUrl`, `reveal` |
@@ -73,12 +74,13 @@ Files: `app/src/Reply.tsx`, `app/src/App.tsx`, `app/src/styles.css`
 - Saved replies read `tools`. Nothing renders when there are no tool events.
 - Done when: a hand-fed fake event sequence in dev renders correctly (don't commit the fake), and nothing shows in normal chats.
 
-### T3 Source chips + source sheet — status: in progress (main chat session)
+### T3 Source chips + source sheet — status: done (see git log)
 Files: new `app/src/SourceSheet.tsx`, `app/src/App.tsx`, `app/src/styles.css`
 - Chips under an answer (file icon + file name) from `sources` (live event or saved JSON). Active chip tinted with the accent.
 - Clicking opens the right-hand glass sheet (canvas `Main.dc.html`, the `aside` "Source preview"): name + folder, Show in Finder (`reveal`), close. Body renders the file as markdown (`GET /api/file`) with the cited passage highlighted (yellow block like the canvas) and scrolled into view.
 - Sheet slides in; Esc or close removes it.
 - Done when: works with a fake `sources` event pointing at a real note in dev; reduced motion respected.
+- Notes: `SourceSheet.tsx`; highlight = `rehypeCite` in `Markdown.tsx` (marks the block holding the quote, class `cited`). Checked by server-rendering only; give the sheet a visual pass once Milestone 2 sends real sources.
 
 ### T4 Permission sheet component — status: todo
 Files: new `app/src/PermissionSheet.tsx`, `app/src/styles.css`

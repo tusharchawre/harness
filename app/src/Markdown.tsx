@@ -122,9 +122,34 @@ const components = {
   hw: Word,
 } as Components;
 
-const Block = memo(function Block({ text }: { text: string }) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{text}</ReactMarkdown>;
+// Source sheet: mark the blocks that hold the cited passage (whitespace and markdown marks ignored).
+const norm = (s: string) => s.replace(/[\s*_`#>]+/g, " ").trim().toLowerCase();
+function rehypeCite(quote: string) {
+  const q = norm(quote);
+  const visit = (n: HNode) => {
+    if (n.type === "element" && /^(p|li|h[1-6]|td|th|pre)$/.test(n.tagName!)) {
+      const t = norm(textOf(n));
+      if (t && (t.includes(q) || (t.length >= 16 && q.includes(t)))) {
+        const cls = n.properties?.className;
+        n.properties = { ...n.properties, className: [...(Array.isArray(cls) ? cls : []), "cited"] };
+        return;
+      }
+    }
+    n.children?.forEach(visit);
+  };
+  return () => (tree: HNode) => (q ? visit(tree) : undefined);
+}
+
+const Block = memo(function Block({ text, cite }: { text: string; cite?: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={cite ? [rehypeCite(cite)] : []} components={components}>
+      {text}
+    </ReactMarkdown>
+  );
 });
+
+// A whole document without the reply wrapper (the source sheet supplies its own container).
+export const MarkdownDoc = ({ text, cite }: { text: string; cite?: string }) => <Block text={text} cite={cite} />;
 
 const wordPlugins = [rehypeWords];
 function StreamingTail({ text, open }: { text: string; open: boolean }) {
