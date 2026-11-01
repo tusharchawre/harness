@@ -37,6 +37,7 @@ Task board for the Harness UI work. Agents: read this file and `README.md`, then
 | `app/src/highlight.ts` | Shiki (JS regex engine, Xcode-like light/dark themes), cached |
 | `app/src/follow.ts` | Auto-follow scrolling + "↓ Latest" pill logic |
 | `app/src/SourceSheet.tsx` | Right-hand source preview: note as markdown, cited block highlighted, Show in Finder |
+| `app/src/PermissionSheet.tsx` | `askPermission()` + the permission sheet (Deny / Allow Once, always-allow checkbox) |
 | `app/src/Reply.tsx` | "Thought for Ns" / "Used N tools" disclosures |
 | `app/src/Settings.tsx` | Settings modal (System Settings style); `openSettings(pane)` in `native.ts` opens it |
 | `app/src/native.ts` | Tauri wrappers: menu events, model menu sync, accent colour, `openUrl`, `reveal` |
@@ -82,11 +83,12 @@ Files: new `app/src/SourceSheet.tsx`, `app/src/App.tsx`, `app/src/styles.css`
 - Done when: works with a fake `sources` event pointing at a real note in dev; reduced motion respected.
 - Notes: `SourceSheet.tsx`; highlight = `rehypeCite` in `Markdown.tsx` (marks the block holding the quote, class `cited`). Checked by server-rendering only; give the sheet a visual pass once Milestone 2 sends real sources.
 
-### T4 Permission sheet component — status: todo
+### T4 Permission sheet component — status: done (see git log)
 Files: new `app/src/PermissionSheet.tsx`, `app/src/styles.css`
 - Reusable component from `Sheet.dc.html`: dims the window, drops from the top, shows the tool name, target path and a diff preview, an "Always allow in this folder" checkbox, Deny / Allow Once (default button, Enter).
 - API: `askPermission({ tool, path, diff }) => Promise<{ allow: boolean; always: boolean }>` so the Milestone 2 agent loop can await it before any write/delete.
 - Not wired to anything yet. Add a dev-only way to preview it (e.g. `?sheet` in the browser), then remove or gate it before committing.
+- Notes: `askPermission(req)` queues requests and renders in its own root (no App wiring). `action: "create" | "edit" | "delete"` picks the copy. Preview: `bun run dev`, open http://localhost:1420/?sheet (gated by `import.meta.env.DEV` in `main.tsx`). Not visually checked yet (no headless browser here).
 
 ### T5 Remove leftover native-control deps — status: todo (mechanical)
 Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`

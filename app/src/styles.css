@@ -33,6 +33,8 @@
   --quote-bar: rgba(255, 255, 255, 0.18);
   --trace: rgba(255, 255, 255, 0.04);
   --highlight: rgba(255, 214, 10, 0.16);
+  --diff-add: #a6e3a1;
+  --diff-del: #ff8a80;
   --send-bg: #f5f5f7;
   --send-fg: #000;
   --control: rgba(255, 255, 255, 0.12);
@@ -75,6 +77,8 @@
     --quote-bar: rgba(0, 0, 0, 0.18);
     --trace: rgba(0, 0, 0, 0.035);
     --highlight: rgba(255, 204, 0, 0.28);
+    --diff-add: #1f7a33;
+    --diff-del: #c4281c;
     --send-bg: #1d1d1f;
     --send-fg: #fff;
     --control: rgba(255, 255, 255, 0.9);
@@ -422,3 +426,41 @@ textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, tran
 .list-footer button { width: 26px; height: 22px; color: var(--text-3); border-radius: 5px; display: flex; align-items: center; justify-content: center; }
 .list-footer button:hover:not(:disabled) { background: var(--hover); }
 .list-footer span { width: 1px; height: 14px; background: var(--separator-strong); }
+
+/* ---- permission sheet (drops from the top, dims the window) ---- */
+.perm-root { position: fixed; inset: 0; z-index: 200; }
+.perm-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); animation: fadeIn 200ms ease-out both; }
+@media (prefers-color-scheme: light) { .perm-backdrop { background: rgba(0, 0, 0, 0.18); } }
+.perm-sheet {
+  position: absolute; top: 62px; left: 50%; width: 460px; max-width: calc(100% - 32px); transform: translateX(-50%);
+  padding: 22px 22px 18px; border-radius: 20px; display: flex; flex-direction: column; gap: 14px;
+  background: var(--popover); -webkit-backdrop-filter: blur(50px) saturate(1.2); backdrop-filter: blur(50px) saturate(1.2);
+  border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), var(--popover-shadow);
+  animation: sheetDrop 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes sheetDrop { from { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(0.98); } }
+.perm-root.closing .perm-backdrop { animation: fadeOut 160ms ease-in forwards; }
+.perm-root.closing .perm-sheet { animation: sheetLift 160ms ease-in forwards; }
+.perm-root.closing { animation: fadeOut 170ms linear forwards; }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes sheetLift { to { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.98); } }
+.perm-text { display: flex; flex-direction: column; gap: 4px; }
+.perm-text h1 { margin: 0; font-size: 15px; font-weight: 600; }
+.perm-text p { margin: 0; color: var(--secondary); line-height: 1.5; }
+.perm-well { border-radius: 12px; background: var(--well); border: 1px solid var(--well-border); overflow: hidden; }
+.perm-tool { padding: 9px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--separator); font-family: var(--mono); font-size: 12px; }
+.perm-tool .meta { margin-left: auto; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+.perm-path { padding: 8px 12px; font-family: var(--mono); font-size: 11.5px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; }
+.perm-diff { margin: 0; padding: 10px 12px; max-height: 240px; overflow: auto; border-top: 1px solid var(--separator); font-family: var(--mono); font-size: 11.5px; line-height: 1.6; color: var(--secondary); }
+.perm-diff span { display: block; white-space: pre; }
+.perm-diff .add { color: var(--diff-add); }
+.perm-diff .del { color: var(--diff-del); }
+.perm-always { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+.perm-always input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.perm-buttons { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.pill { height: 30px; min-width: 80px; padding: 0 14px; border-radius: 999px; background: var(--control); box-shadow: var(--control-edge); color: var(--text); }
+.pill.default { min-width: 96px; background: var(--accent); color: #fff; font-weight: 500; box-shadow: none; }
+.pill:active { filter: brightness(0.92); }
+@media (prefers-reduced-motion: reduce) {
+  .perm-sheet, .perm-root.closing .perm-sheet { animation: none; }
+}
