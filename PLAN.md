@@ -90,14 +90,14 @@ Files: new `app/src/PermissionSheet.tsx`, `app/src/styles.css`
 - Not wired to anything yet. Add a dev-only way to preview it (e.g. `?sheet` in the browser), then remove or gate it before committing.
 - Notes: `askPermission(req)` queues requests and renders in its own root (no App wiring). `action: "create" | "edit" | "delete"` picks the copy. Preview: `bun run dev`, open http://localhost:1420/?sheet (gated by `import.meta.env.DEV` in `main.tsx`). Not visually checked yet (no headless browser here).
 
-### T5 Remove leftover native-control deps — status: todo (mechanical)
+### T5 Remove leftover native-control deps — status: done (c1d714a): removed objc2, objc2-foundation, serde_json and unused objc2-app-kit features; cargo check passes
 Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`
 - `objc2-app-kit` only needs `NSColor`, `NSColorSpace`, `objc2-core-foundation` now. Drop the other features; drop `serde_json` and `objc2` if nothing uses them. `cargo check` must pass.
 
-### T6 Update the design canvas — status: todo (after T1–T4)
+### T6 Update the design canvas — status: in progress (main chat session)
 - Bring `project/Main.dc.html`, `Settings.dc.html`, `Sheet.dc.html` in line with what shipped (Settings is now a modal in the chat window, not a separate window; HTML controls; sidebar toggle; ⋯ chat menu; message actions). Follow the artifact type's instructions that come back from the read; publish only changed files.
 
-### T7 "Couldn't match the design" list — status: todo (last)
+### T7 "Couldn't match the design" list — status: done (68ec98b): README section added
 - Add a short section to `README.md`: each item, why (e.g. native traffic lights replace the drawn ones; real vibrancy replaces the mockup's blurred blobs; model labels come from config, so "Qwen3.5-9B + MTP" not "Qwen3.5-9B").
 
 ### T8 Ship — status: todo (last)
