@@ -161,12 +161,21 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("exit", () => manager.killNow());
 
-// As a Tauri sidecar, stdin is a pipe from the app: "shutdown" or EOF means the app is closing.
+// As a Tauri sidecar: the app writes "shutdown" to stdin on quit. stdin can read as closed from
+// the start under Tauri, so EOF isn't a quit signal; instead exit once the app's process is gone.
 if (process.env.HARNESS_SIDECAR === "1") {
   (async () => {
     for await (const chunk of process.stdin) if (String(chunk).includes("shutdown")) shutdown();
-    shutdown();
-  })();
+  })().catch(() => {});
+  const parent = Number(process.env.HARNESS_PARENT_PID);
+  if (parent > 0)
+    setInterval(() => {
+      try {
+        process.kill(parent, 0);
+      } catch {
+        shutdown();
+      }
+    }, 2000).unref();
 }
 
 Bun.serve({ port: config.port, hostname: "127.0.0.1", fetch: app.fetch, idleTimeout: 0 });

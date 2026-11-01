@@ -187,6 +187,7 @@ pub fn run() {
                 .shell()
                 .sidecar("harness-server")?
                 .env("HARNESS_SIDECAR", "1")
+                .env("HARNESS_PARENT_PID", std::process::id().to_string())
                 .spawn()?;
             *app.state::<Sidecar>().0.lock().unwrap() = Some(child);
             tauri::async_runtime::spawn(async move {
