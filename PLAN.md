@@ -100,7 +100,7 @@ Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`
 ### T7 "Couldn't match the design" list — status: done (68ec98b): README section added
 - Add a short section to `README.md`: each item, why (e.g. native traffic lights replace the drawn ones; real vibrancy replaces the mockup's blurred blobs; model labels come from config, so "Qwen3.5-9B + MTP" not "Qwen3.5-9B").
 
-### T8 Ship — status: todo (last)
+### T8 Ship — status: done (installed; API smoke test passed: think on/off, title gen, settings GET/PUT; UI checks left to user)
 - Rebuild, install to /Applications, smoke test: send a message with Think on and off, open Settings (⌘,), change a setting, reopen. Report results to the user.
 
 ## Later milestones (not now)
