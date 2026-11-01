@@ -36,7 +36,7 @@ Task board for the Harness UI work. Agents: read this file and `README.md`, then
 | `app/src/Markdown.tsx` | react-markdown + remark-gfm renderer, streaming word wash-in, code blocks |
 | `app/src/highlight.ts` | Shiki (JS regex engine, Xcode-like light/dark themes), cached |
 | `app/src/follow.ts` | Auto-follow scrolling + "↓ Latest" pill logic |
-| `app/src/Reply.tsx` | "Thought for Ns" / "Used N tools" disclosures (T1/T2, uncommitted at time of writing) |
+| `app/src/Reply.tsx` | "Thought for Ns" / "Used N tools" disclosures |
 | `app/src/Settings.tsx` | Settings modal (System Settings style); `openSettings(pane)` in `native.ts` opens it |
 | `app/src/native.ts` | Tauri wrappers: menu events, model menu sync, accent colour, `openUrl`, `reveal` |
 | `app/src/api.ts` | REST + SSE client, types (`Message`, `ToolStep`, `Source`, `SendEvent`) |
@@ -60,20 +60,20 @@ Useful facts:
 
 ## Tasks
 
-### T1 Thinking disclosure — status: in progress (`Reply.tsx` exists, not wired or committed)
+### T1 Thinking disclosure — status: done (a81ecc2 + reasoning wash-in)
 Files: `app/src/Reply.tsx`, `app/src/App.tsx`, `app/src/styles.css`
 - While reasoning: "Thinking…" label with a light shimmer; reasoning streams below in dimmer text with the same blur-in as replies.
 - When the first answer token arrives: collapse to "Thought for Ns" (live timing in the client; `thinking_ms` for saved replies). Click toggles.
 - Saved replies: collapsed by default.
 - Done when: works live with Think on, and on reload of an old chat; reduced motion = no shimmer/blur.
 
-### T2 Tool trace disclosure — status: in progress (same file as T1)
+### T2 Tool trace disclosure — status: done (a81ecc2; checked with a server-rendered fake trace, nothing committed)
 Files: `app/src/Reply.tsx`, `app/src/App.tsx`, `app/src/styles.css`
 - "Used N tools" next to "Thought for Ns". Rows: call (mono), result, time. Each row slides/fades in on `tool_call`, shows a small spinner, settles to result + time on `tool_result`.
 - Saved replies read `tools`. Nothing renders when there are no tool events.
 - Done when: a hand-fed fake event sequence in dev renders correctly (don't commit the fake), and nothing shows in normal chats.
 
-### T3 Source chips + source sheet — status: todo
+### T3 Source chips + source sheet — status: in progress (main chat session)
 Files: new `app/src/SourceSheet.tsx`, `app/src/App.tsx`, `app/src/styles.css`
 - Chips under an answer (file icon + file name) from `sources` (live event or saved JSON). Active chip tinted with the accent.
 - Clicking opens the right-hand glass sheet (canvas `Main.dc.html`, the `aside` "Source preview"): name + folder, Show in Finder (`reveal`), close. Body renders the file as markdown (`GET /api/file`) with the cited passage highlighted (yellow block like the canvas) and scrolled into view.

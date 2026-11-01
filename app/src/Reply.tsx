@@ -14,6 +14,19 @@ function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   );
 }
 
+// Live reasoning washes in word by word like replies. Words settle into plain text in chunks of
+// 200 so a long think doesn't keep thousands of spans around; spans keep absolute-index keys.
+function LiveText({ text }: { text: string }) {
+  const words = text.match(/\s+|\S+\s*/g) ?? [];
+  const settled = Math.max(0, Math.floor((words.length - 200) / 200) * 200);
+  return (
+    <>
+      {words.slice(0, settled).join("")}
+      {words.slice(settled).map((w, i) => <span key={settled + i} className="w">{w}</span>)}
+    </>
+  );
+}
+
 const secs = (ms: number) => {
   const s = Math.max(1, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
@@ -67,7 +80,7 @@ export function ReplyExtras(props: {
       {reasoning && (
         <Collapse open={!!props.thinkingNow || showReasoning}>
           <div className={"reasoning-text" + (props.thinkingNow ? " live" : "")}>
-            <div>{reasoning}</div>
+            <div>{props.thinkingNow ? <LiveText text={reasoning} /> : reasoning}</div>
           </div>
         </Collapse>
       )}
