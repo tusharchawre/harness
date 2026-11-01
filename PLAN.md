@@ -94,7 +94,7 @@ Files: new `app/src/PermissionSheet.tsx`, `app/src/styles.css`
 Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`
 - `objc2-app-kit` only needs `NSColor`, `NSColorSpace`, `objc2-core-foundation` now. Drop the other features; drop `serde_json` and `objc2` if nothing uses them. `cargo check` must pass.
 
-### T6 Update the design canvas — status: in progress (main chat session)
+### T6 Update the design canvas — status: done (canvas version 14: Settings drawn as the in-window sheet, Copy/Regenerate under replies; Sheet.dc.html already matched)
 - Bring `project/Main.dc.html`, `Settings.dc.html`, `Sheet.dc.html` in line with what shipped (Settings is now a modal in the chat window, not a separate window; HTML controls; sidebar toggle; ⋯ chat menu; message actions). Follow the artifact type's instructions that come back from the read; publish only changed files.
 
 ### T7 "Couldn't match the design" list — status: done (68ec98b): README section added
