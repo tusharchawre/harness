@@ -77,3 +77,14 @@ Models: edit `DEFAULT_PRESETS` in `server/src/config.ts`, or put a `models.json`
 [{ "id": "qwen3.5-9b-mtp", "label": "Qwen3.5-9B + MTP", "model": "mlx-community/Qwen3.5-9B-4bit",
    "draftModel": "mlx-community/Qwen3.5-9B-MTP-4bit", "draftKind": "mtp" }]
 ```
+
+## Differences from the design canvas
+
+- Traffic lights are the real macOS ones (overlay title bar), not drawn. Their position comes from `trafficLightPosition`.
+- The window background is real vibrancy (NSVisualEffectView, Sidebar material), so the canvas's blurred colour blobs behind the glass don't exist. What shows through is the desktop.
+- Model names come from config presets ("Qwen3.5-9B + MTP"), not the canvas's shortened labels.
+- Settings is a sheet inside the chat window, not a separate System Settings-style window. Controls are HTML styled like macOS, because native AppKit control overlays were laggy and faded oddly.
+- The system font (SF Pro / SF Mono) is used instead of the canvas's Geist fallback.
+- Source preview doesn't show the note's date line under the title, because the file endpoint returns no modified time yet.
+- Code highlighting follows the canvas colours only for keywords, strings, numbers and comments. Light-mode colours are Xcode-style equivalents, since the canvas is dark only.
+- The mic button is disabled until the voice milestone. Tool rows and source chips only appear once Milestone 2 sends tool/source events.
