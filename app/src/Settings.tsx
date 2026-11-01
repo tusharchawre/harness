@@ -135,12 +135,9 @@ function Popup<T extends string | number>(props: { id: string; value: T; options
   );
 }
 
+// WebKit's native switch control (drawn by the system, follows the accent color).
 function Switch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }) {
-  return (
-    <button role="switch" aria-checked={on} aria-label={label} className={"switch" + (on ? " on" : "")} onClick={() => onChange(!on)}>
-      <span />
-    </button>
-  );
+  return <input type="checkbox" {...{ switch: "" }} aria-label={label} checked={on} onChange={(e) => onChange(e.target.checked)} />;
 }
 
 function ModelGroup({ s, presets, save }: { s: Settings; presets: Preset[]; save: (p: Partial<Settings>) => void }) {
@@ -186,7 +183,6 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
   const idle = IDLE_OPTIONS.some((o) => o.value === s.idleMinutes) ? IDLE_OPTIONS : [...IDLE_OPTIONS, { value: s.idleMinutes, label: `After ${s.idleMinutes} minutes` }];
   const max = 4096;
   const budget = Math.min(s.thinkingBudget, max);
-  const pct = (budget / max) * 100;
   return (
     <section className="group" aria-label="Runtime">
       <div className="row">
@@ -208,20 +204,20 @@ function RuntimeGroup({ s, presets, save }: { s: Settings; presets: Preset[]; sa
           <label htmlFor="budget">Thinking budget</label>
           <span>{budget === 0 ? "Off" : `${budget / 1024}K tokens`}</span>
         </div>
+        {/* Native slider; the datalist gives it system tick marks. */}
         <input
           id="budget"
-          className="tahoe"
           type="range"
           min={0}
           max={max}
           step={1024}
+          list="budget-ticks"
           value={budget}
           onChange={(e) => save({ thinkingBudget: Number(e.target.value) })}
-          style={{ background: `linear-gradient(to right, var(--accent) ${pct}%, var(--track) ${pct}%)` }}
         />
-        <div className="ticks" aria-hidden="true">
-          {[0, 1, 2, 3, 4].map((i) => <span key={i} />)}
-        </div>
+        <datalist id="budget-ticks">
+          {[0, 1024, 2048, 3072, 4096].map((v) => <option key={v} value={v} />)}
+        </datalist>
         {p?.mtp && <div className="sub">Not applied to MTP models yet: mlx-vlm refuses a budget with a speculative drafter.</div>}
       </div>
     </section>

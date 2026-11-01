@@ -37,8 +37,6 @@
   --send-fg: #000;
   --control: rgba(255, 255, 255, 0.12);
   --control-edge: inset 0 0.5px 0 rgba(255, 255, 255, 0.15);
-  --switch-off: rgba(255, 255, 255, 0.16);
-  --track: rgba(255, 255, 255, 0.14);
 
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   color-scheme: dark;
@@ -79,8 +77,6 @@
     --send-fg: #fff;
     --control: rgba(255, 255, 255, 0.9);
     --control-edge: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.06);
-    --switch-off: rgba(0, 0, 0, 0.12);
-    --track: rgba(0, 0, 0, 0.1);
     color-scheme: light;
   }
 }
@@ -338,22 +334,11 @@ input, textarea, select { font: inherit; color: var(--text); }
 .popup select { appearance: none; -webkit-appearance: none; height: 24px; padding: 0 28px 0 10px; border: 0; border-radius: 6px; background: var(--control); box-shadow: var(--control-edge); outline: none; }
 .popup svg { position: absolute; right: 9px; pointer-events: none; }
 
-.switch { width: 38px; height: 22px; padding: 2px; flex-shrink: 0; border-radius: 999px; background: var(--switch-off); display: flex; justify-content: flex-start; transition: background 180ms; }
-.switch span { width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: transform 180ms cubic-bezier(0.2, 0.7, 0.2, 1); }
-.switch.on { background: var(--accent); }
-.switch.on span { transform: translateX(16px); }
 
 .group .slider-row { flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 14px 12px; }
 .slider-head { display: flex; justify-content: space-between; align-items: baseline; }
 .slider-head span { font-size: 12px; color: var(--secondary); }
-input.tahoe { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 999px; margin: 10px 0; outline: none; }
-input.tahoe::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 24px; height: 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.92);
-  border: 0.5px solid rgba(255, 255, 255, 0.6); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-@media (prefers-color-scheme: light) { input.tahoe::-webkit-slider-thumb { background: #fff; border-color: rgba(0, 0, 0, 0.08); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); } }
-.ticks { display: flex; justify-content: space-between; padding: 0 11px; }
-.ticks span { width: 3px; height: 3px; border-radius: 999px; background: var(--dot); }
+.slider-row input[type="range"] { width: 100%; margin: 4px 0 0; }
 
 textarea.prompt { width: 100%; padding: 10px 14px; border: 1px solid var(--separator); border-radius: 12px; background: var(--group); line-height: 1.55; resize: vertical; outline: none; user-select: text; -webkit-user-select: text; }
 textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
