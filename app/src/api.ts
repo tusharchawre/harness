@@ -17,7 +17,24 @@ export type Message = {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   tokens_per_sec: number | null;
+  thinking_ms: number | null;
+  tools: string | null; // JSON ToolStep[]
+  sources: string | null; // JSON Source[]
   created_at: number;
+};
+
+// Agent tool trace (Milestone 2 sends these; rendered whenever they exist).
+export type ToolStep = { id: string; name: string; args: string; result?: string; ms?: number; error?: boolean };
+// A cited file: `quote` is the passage to highlight.
+export type Source = { path: string; title?: string; quote?: string };
+
+export const parseJSON = <T,>(s: string | null): T | null => {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
 };
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
@@ -32,6 +49,7 @@ export const api = {
   createChat: (preset: string) => json<Chat>("/api/chats", { method: "POST", body: JSON.stringify({ preset }) }),
   setChatPreset: (id: string, preset: string) => json<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ preset }) }),
   renameChat: (id: string, title: string) => json<Chat>(`/api/chats/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  file: (path: string) => json<{ path: string; content: string }>(`/api/file?path=${encodeURIComponent(path)}`),
   memories: () => json<Memory[]>("/api/memories"),
   addMemory: (text: string) => json<Memory>("/api/memories", { method: "POST", body: JSON.stringify({ text }) }),
   deleteMemory: (id: number) => json(`/api/memories/${id}`, { method: "DELETE" }),
@@ -53,6 +71,9 @@ export type SendEvent =
   | { event: "user"; data: Message }
   | { event: "status"; data: { status: string; model?: string } }
   | { event: "reasoning" | "content"; data: { text: string } }
+  | { event: "tool_call"; data: { id: string; name: string; args: string } }
+  | { event: "tool_result"; data: { id: string; result: string; ms: number; error?: boolean } }
+  | { event: "sources"; data: Source[] }
   | { event: "done"; data: Message }
   | { event: "error"; data: { message: string } };
 

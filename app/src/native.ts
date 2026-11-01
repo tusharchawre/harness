@@ -57,6 +57,13 @@ export function onNativeControl(fn: (id: string, value: number, text: string | n
   return () => void off.then((f) => f());
 }
 
+// Links in replies open in the default browser, never inside the app.
+export function openUrl(url: string) {
+  if (!/^(https?:|mailto:)/i.test(url)) return;
+  if (isTauri) invoke("open_url", { url });
+  else window.open(url, "_blank", "noopener");
+}
+
 export function reveal(path: string) {
   if (isTauri) invoke("reveal", { path });
 }

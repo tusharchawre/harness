@@ -32,6 +32,9 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
   const [offline, setOffline] = useState(false);
   const [q, setQ] = useState("");
   const [phase, setPhase] = useState<"enter" | "open" | "settled" | "closing">("enter");
+  // Native controls join once the sheet is mostly in place (the spring is ~90% done by then),
+  // so they never show before the sheet itself.
+  const [nativeReady, setNativeReady] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   // Back/forward like System Settings: a history of panes and a cursor.
   const [nav, setNav] = useState<{ stack: Pane[]; at: number }>(() => ({ stack: [props.pane], at: 0 }));
@@ -49,10 +52,11 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
     boot();
     // Two frames so the starting styles are painted before the transition.
     requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
+    const t = setTimeout(() => setNativeReady(true), 240);
     // With Reduce Motion there's no transform transition to wait for.
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) setTimeout(() => setPhase((p) => (p === "open" ? "settled" : p)), 200);
     panelRef.current?.focus();
-    return () => void (alive = false);
+    return () => void ((alive = false), clearTimeout(t));
   }, []);
 
   useEffect(() => {
@@ -83,7 +87,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
 
   const title = PANES.find((p) => p.id === pane)!.label;
   const s = settings;
-  const live = phase === "open" || phase === "settled";
+  const live = nativeReady && (phase === "open" || phase === "settled");
 
   return (
     <div className="modal-root" data-phase={phase}>

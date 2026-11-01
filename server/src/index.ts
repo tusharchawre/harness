@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -93,6 +95,17 @@ app.delete("/api/chats/:id", (c) => {
   return c.json({ ok: true });
 });
 
+// ---- files (source sheet) ----
+// Text files under the home folder only, for previewing cited notes.
+app.get("/api/file", async (c) => {
+  const path = resolve(c.req.query("path")?.replace(/^~(?=\/)/, homedir()) ?? "");
+  if (!path.startsWith(homedir() + "/") || !/\.(md|markdown|txt|mdx)$/i.test(path)) return c.json({ error: "not allowed" }, 403);
+  const file = Bun.file(path);
+  if (!(await file.exists())) return c.json({ error: "not found" }, 404);
+  if (file.size > 2_000_000) return c.json({ error: "too large" }, 413);
+  return c.json({ path, content: await file.text() });
+});
+
 // ---- memory ----
 app.get("/api/memories", (c) => c.json(memories.list()));
 app.post("/api/memories", async (c) => {
@@ -139,6 +152,8 @@ app.post("/api/chats/:id/messages", async (c) => {
     let reasoning = "";
     let usage = { promptTokens: 0, completionTokens: 0 };
     let firstTokenAt = 0;
+    let reasoningAt = 0; // first reasoning token
+    let answerAt = 0; // first answer token
     const preset = presetById(chat.preset);
     const model = preset.label;
     try {
@@ -158,8 +173,8 @@ app.post("/api/chats/:id/messages", async (c) => {
             continue;
           }
           firstTokenAt ||= performance.now();
-          if (ev.type === "reasoning") reasoning += ev.text, reasoningTokens++;
-          else text += ev.text;
+          if (ev.type === "reasoning") (reasoningAt ||= performance.now()), (reasoning += ev.text), reasoningTokens++;
+          else (answerAt ||= performance.now()), (text += ev.text);
           await send(ev.type, { text: ev.text });
         }
       });
@@ -176,6 +191,7 @@ app.post("/api/chats/:id/messages", async (c) => {
       chat_id: chat.id, role: "assistant", content: text, reasoning: reasoning || null, model,
       thinking: thinking ? 1 : 0, prompt_tokens: usage.promptTokens || null,
       completion_tokens: usage.completionTokens || null, tokens_per_sec: tps,
+      thinking_ms: reasoningAt ? Math.round((answerAt || performance.now()) - reasoningAt) : null,
     });
     chats.touch(chat.id);
     if (!abort.signal.aborted) await send("done", saved);

@@ -82,6 +82,15 @@ fn show_main_window(app: AppHandle) {
     show_main(&app);
 }
 
+// Open a link from a reply in the default browser.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:")) {
+        return Err("unsupported link".into());
+    }
+    std::process::Command::new("open").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 // Show a file in Finder (source sheet).
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -156,7 +165,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, show_main_window, reveal, native_controls::native_control])
+        .invoke_handler(tauri::generate_handler![set_model_menu, accent_color, show_main_window, reveal, open_url, native_controls::native_control])
         .setup(|app| {
             build_menus(app.handle())?;
             if let Some(main) = app.get_webview_window("main") {
