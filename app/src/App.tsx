@@ -145,6 +145,7 @@ export function App() {
     if (!text || draft) return;
     setError(null);
     if (resend === undefined) setInput("");
+    inputRef.current?.focus(); // clicking Send (or Regenerate) would otherwise leave the caret gone
     let delivered = false; // the server saved the user message
     pin();
     let id = chatId;
@@ -230,8 +231,11 @@ export function App() {
   };
   useEffect(() => {
     const h = (e: KeyboardEvent) => keysRef.current(e);
+    // Coming back to the window with nothing focused puts the caret in the composer.
+    const f = () => document.activeElement === document.body && inputRef.current?.focus();
     window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    window.addEventListener("focus", f);
+    return () => (window.removeEventListener("keydown", h), window.removeEventListener("focus", f));
   }, []);
 
   const lastId = msgs.at(-1)?.id;

@@ -276,12 +276,18 @@ input, textarea, select { font: inherit; color: var(--text); }
 .composer-wrap { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 28px 14px; pointer-events: none; }
 .composer-wrap > * { pointer-events: auto; }
 .composer {
+  position: relative; isolation: isolate;
   max-width: 680px; margin: 0 auto; border-radius: 16px; padding: 12px 10px 8px 14px; display: flex; flex-direction: column; gap: 8px;
-  background: var(--fill); -webkit-backdrop-filter: blur(30px) saturate(1.15); backdrop-filter: blur(30px) saturate(1.15);
   border: 1px solid var(--glass-border); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
-@media (prefers-color-scheme: light) { .composer { background: rgba(255, 255, 255, 0.62); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); } }
-.composer textarea { width: 100%; border: 0; background: transparent; font-size: 14px; line-height: 1.5; resize: none; outline: none; padding: 0; max-height: 220px; user-select: text; -webkit-user-select: text; }
+/* The glass lives on a layer behind the content: WebKit can fail to paint the text caret inside
+   an element that has backdrop-filter itself. */
+.composer::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--fill); -webkit-backdrop-filter: blur(30px) saturate(1.15); backdrop-filter: blur(30px) saturate(1.15);
+}
+@media (prefers-color-scheme: light) { .composer { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); } .composer::before { background: rgba(255, 255, 255, 0.62); } }
+.composer textarea { cursor: text; caret-color: var(--text); width: 100%; border: 0; background: transparent; font-size: 14px; line-height: 1.5; resize: none; outline: none; padding: 0; max-height: 220px; user-select: text; -webkit-user-select: text; }
 .composer .tools { display: flex; align-items: center; gap: 4px; }
 .think { height: 28px; padding: 0 10px; border-radius: 7px; color: var(--text-3); font-size: 12px; display: flex; align-items: center; gap: 6px; transition: background 150ms, color 150ms; }
 .think:hover { background: var(--hover); }
