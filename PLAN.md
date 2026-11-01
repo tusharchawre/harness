@@ -103,6 +103,9 @@ Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`
 ### T8 Ship — status: done (installed; API smoke test passed: think on/off, title gen, settings GET/PUT; UI checks left to user)
 - Rebuild, install to /Applications, smoke test: send a message with Think on and off, open Settings (⌘,), change a setting, reopen. Report results to the user.
 
+### T9 App quit during first model load — status: todo
+- During T8's first smoke run the harness process died while the model was loading. There was no crash report, and it didn't happen again after a relaunch. The first `POST /api/chats` right after launch also returned an empty body (the server probably wasn't up yet). Reproduce with a cold launch, then send a message right away; check the sidecar parent-PID watch and the stdin "shutdown" handling in `server/src/index.ts`.
+
 ## Later milestones (not now)
 - **Quick Ask panel** (⌥Space, tauri-nspanel): own milestone. Tray "Quick Ask" just opens the main window for now (TODO in `lib.rs`).
 - **Milestone 2, tools:** the agent emits `tool_call` / `tool_result` / `sources` and calls `askPermission` (T4) before writes/deletes.
