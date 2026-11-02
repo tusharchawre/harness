@@ -1,7 +1,7 @@
 // Tools the agent can call. Each one is described to the model as a JSON schema (OpenAI "function"
 // format); the chat template turns these into text in the system prompt.
 
-import { listFiles, readFile } from "./files";
+import { findFiles, grepFiles, listFiles, readFile } from "./files";
 import type { ToolContext } from "./permissions";
 import { fetchPage, webSearch } from "./web";
 
@@ -40,7 +40,8 @@ const calculator: Tool = {
   },
 };
 
-const allTools: Tool[] = [calculator, webSearch, fetchPage, listFiles, readFile];
+// Local tools first: small models lean towards the first matching tool, and the web was winning for local questions.
+const allTools: Tool[] = [findFiles, grepFiles, listFiles, readFile, calculator, webSearch, fetchPage];
 export const availableTools = () => allTools.filter((t) => t.available?.() ?? true);
 
 // ---- calculator: a small recursive-descent parser (never eval model output) ----

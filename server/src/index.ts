@@ -238,7 +238,7 @@ app.post("/api/chats/:id/messages", async (c) => {
   const system = [
     currentSettings().systemPrompt.trim(),
     access !== "off" &&
-      `The user ${where}. When a question is about their plans, notes, documents, code or anything personal you don't know, check with list_files and read_file before answering or asking them.`,
+      `The user ${where}. When a question is about their plans, notes, documents, code or anything personal you don't know, look before answering or asking them. Questions about their files, projects or code are answered from this Mac, never with web_search: find_files to locate a file by name, grep_files to search inside files, list_files to browse a folder, read_file to read one.`,
   ].filter(Boolean).join("\n\n");
   const prompt: ChatMessage[] = [
     ...(system ? [{ role: "system" as const, content: system }] : []),
@@ -281,8 +281,11 @@ app.post("/api/chats/:id/messages", async (c) => {
         let stepText = "";
         let stepFirstAt = 0;
         await manager.use(async () => {
+          // Last call: no tools, and say so, or the model writes a tool call as plain text.
+          const final = step === MAX_STEPS;
+          const messages: ChatMessage[] = final ? [...prompt, { role: "user", content: "(No more tools are available. Answer now with what you found.)" }] : prompt;
           const req = {
-            model: preset.model, messages: prompt, thinking, thinkingBudget: budget, signal: abort.signal,
+            model: preset.model, messages, thinking, thinkingBudget: budget, signal: abort.signal,
             tools: step < MAX_STEPS ? availableTools().map(toolSpec) : undefined,
           };
           for await (const ev of client.stream(req)) {
@@ -323,7 +326,8 @@ app.post("/api/chats/:id/messages", async (c) => {
       if (!abort.signal.aborted) await send("error", { message: e instanceof Error ? e.message : String(e) });
     }
 
-    text = text.trim();
+    text = text.replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, "").trim(); // stray calls written as text
+    if (!text && trace.length && !abort.signal.aborted) text = "_No answer: the model used all its tool steps without replying. Try asking more specifically._";
     if (!text && !reasoning && !trace.length) return;
     // Decode speed: generated tokens over the time since the first token (excludes prompt processing).
     const secs = lastStep.firstAt ? (lastStep.endAt - lastStep.firstAt) / 1000 : 0;

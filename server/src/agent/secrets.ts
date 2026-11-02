@@ -1,6 +1,7 @@
 // Which files count as private: the model may list their names, but reading one needs the user's
 // yes (and makes later web requests in that reply ask too). Errs on the side of asking: a prompt
 // costs a click, a leaked key costs much more.
+import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { DATA_DIR } from "../config";
@@ -67,6 +68,24 @@ const PATTERNS = [
 const WORD = /(^|[._-])(secrets?|tokens?|passwords?|passwd|credentials?|api[-_]?keys?|keys?|auth|private)([._-]|$)/i;
 const CONFIG_EXT = /(^[^.]*$|\.(json|txt|ya?ml|toml|ini|conf|cfg|properties|xml|plist|env)$)/i;
 
+// Key material under an innocent name (e.g. ~/deploy-key): sniff the start of small files.
+const KEY_HEADER = /-----BEGIN ([A-Z]+ )*PRIVATE KEY( BLOCK)?-----|^PuTTY-User-Key-File/;
+function looksLikeKey(path: string) {
+  try {
+    const fd = openSync(path, "r");
+    try {
+      if (fstatSync(fd).size > 64_000 || !fstatSync(fd).isFile()) return false;
+      const buf = Buffer.alloc(120);
+      readSync(fd, buf, 0, 120, 0);
+      return KEY_HEADER.test(buf.toString("latin1"));
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
 export function isSecret(real: string): boolean {
   const name = basename(real);
   const lower = name.toLowerCase();
@@ -74,5 +93,6 @@ export function isSecret(real: string): boolean {
   if ([...HOME_DIRS, ...SYSTEM_DIRS, DATA_DIR].some(under)) return true;
   if (real.split(sep).some((s) => SEGMENT.test(s))) return true;
   if (NAMES.has(lower) || PATTERNS.some((p) => p.test(name))) return true;
-  return WORD.test(name.replace(/^\./, "")) && CONFIG_EXT.test(name.replace(/^\./, ""));
+  if (WORD.test(name.replace(/^\./, "")) && CONFIG_EXT.test(name.replace(/^\./, ""))) return true;
+  return looksLikeKey(real);
 }

@@ -14,7 +14,8 @@ export const webSearch: Tool = {
   name: "web_search",
   description:
     "Search the web. Returns titles, URLs and short snippets. Snippets are often enough for simple facts; " +
-    "call fetch_page on a result for details. Use for anything recent or that you are unsure about.",
+    "call fetch_page on a result for details. Use for public, recent facts. Never for the user's own files, projects, code or notes: " +
+    "those are on their Mac, so use find_files / grep_files / read_file instead.",
   parameters: {
     type: "object",
     properties: { query: { type: "string", description: "Search query, like you would type into a search engine" } },
