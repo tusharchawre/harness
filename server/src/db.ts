@@ -94,6 +94,7 @@ export const memories = {
   add: (text: string) =>
     db.query<Memory, [string, number]>("INSERT INTO memories (text, created_at) VALUES (?, ?) RETURNING *").get(text, Date.now())!,
   delete: (id: number) => db.query("DELETE FROM memories WHERE id = ?").run(id),
+  update: (id: number, text: string) => db.query("UPDATE memories SET text = ? WHERE id = ?").run(text, id),
 };
 
 export const settings = {

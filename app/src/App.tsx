@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, parseJSON, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings, type Source, type ToolStep } from "./api";
+import { api, type MemoryChange, parseJSON, sendMessage, watchModel, type Chat, type Message, type ModelState, type Preset, type Settings, type Source, type ToolStep } from "./api";
 import { Composer } from "./Composer";
 import { Icon } from "./icons";
 import { useFollow } from "./follow";
 import { Markdown } from "./Markdown";
 import { ReplyExtras } from "./Reply";
+import { MemoryLine } from "./MemoryLine";
 import { PermissionCard, type PermissionAsk } from "./PermissionCard";
 import { SourceSheet } from "./SourceSheet";
 import { onMenu, onOpenSettings, openUrl, setModelMenu } from "./native";
@@ -21,6 +22,7 @@ type Draft = {
   tools: ToolStep[];
   sources: Source[];
   asks: PermissionAsk[]; // inline permission requests, answered or not
+  memories: MemoryChange[]; // memories the model saved / changed / forgot in this reply
   thinkStart: number; // first reasoning chunk (0 = none yet)
   thinkMs: number | null; // reasoning → first answer chunk
 };
@@ -160,7 +162,7 @@ export function App() {
     }
     const ac = new AbortController();
     abortRef.current = ac;
-    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], sources: [], asks: [], thinkStart: 0, thinkMs: null });
+    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], sources: [], asks: [], memories: [], thinkStart: 0, thinkMs: null });
     // The user may open another chat mid-reply: only touch the thread while this chat is on screen.
     const here = () => chatIdRef.current === id;
     try {
@@ -171,6 +173,7 @@ export function App() {
         else if (e.event === "content")
           setDraft((d) => d && { ...d, content: d.content + e.data.text, thinkMs: d.thinkMs ?? (d.thinkStart ? performance.now() - d.thinkStart : null) });
         else if (e.event === "sources") setDraft((d) => d && { ...d, sources: e.data });
+        else if (e.event === "memory") setDraft((d) => d && { ...d, memories: [...d.memories, e.data] });
         else if (e.event === "permission") setDraft((d) => d && { ...d, asks: [...d.asks, e.data] });
         else if (e.event === "tool_call") setDraft((d) => d && { ...d, tools: [...d.tools, e.data] });
         else if (e.event === "tool_result") setDraft((d) => d && { ...d, tools: d.tools.map((t) => (t.id === e.data.id ? { ...t, ...e.data } : t)) });
@@ -208,6 +211,13 @@ export function App() {
     closeSource();
     inputRef.current?.focus();
   }
+
+  const undoMemory = (i: number) => {
+    const m = draft?.memories[i];
+    if (!m || m.undone) return;
+    const undo = m.action === "save" ? Promise.all((m.ids ?? [m.id]).map((id) => api.deleteMemory(id))) : m.action === "update" ? api.setMemory(m.id, m.before ?? m.text) : api.addMemory(m.text);
+    undo.then(() => setDraft((d) => d && { ...d, memories: d.memories.map((x, j) => (j === i ? { ...x, undone: true } : x)) }));
+  };
 
   const answerAsk = (id: string, allowed: boolean) => {
     setDraft((d) => d && { ...d, asks: d.asks.map((a) => (a.id === id ? { ...a, allowed } : a)) });
@@ -330,6 +340,9 @@ export function App() {
                   <PermissionCard key={a.id} ask={a} onAnswer={(allow) => answerAsk(a.id, allow)} />
                 ))}
                 {draft.content && <Markdown text={draft.content} streaming />}
+                {draft.memories.map((m, i) => (
+                  <MemoryLine key={i} change={m} onUndo={() => undoMemory(i)} />
+                ))}
                 {chips("draft", draft.sources)}
               </div>
             )}

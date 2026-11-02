@@ -427,7 +427,7 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
           </button>
         </div>
       </div>
-      <div className="footnote">Facts saved here are added to chats once memory ships (Milestone 3).</div>
+      <div className="footnote">Every chat sees these facts. The model can also save, update and forget them; it never stores passwords or keys.</div>
     </section>
   );
 }

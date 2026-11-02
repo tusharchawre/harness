@@ -4,6 +4,8 @@ export type ModelStatus = "unloaded" | "loading" | "ready" | "error";
 export type ModelState = { status: ModelStatus; presetId: string | null; label: string | null; error?: string; idleMinutes: number; lastUsed: number | null };
 export type Settings = { idleMinutes: number; thinkingBudget: number; thinkDefault: boolean; systemPrompt: string; defaultModel: string; filesAccess: FilesAccess; filesFolder: string };
 export type FilesAccess = "off" | "folder" | "all";
+// A memory the model saved, changed or forgot during a reply (Undo restores it).
+export type MemoryChange = { action: "save" | "update" | "delete"; id: number; ids?: number[]; text: string; before?: string; undone?: boolean };
 export type Memory = { id: number; text: string; created_at: number };
 export type Preset = { id: string; label: string; model: string; mtp: boolean; info: { size?: string; speed?: string; humaneval?: string } };
 export type Chat = { id: string; title: string; preset: string | null; created_at: number; updated_at: number };
@@ -57,6 +59,7 @@ export const api = {
   memories: () => json<Memory[]>("/api/memories"),
   addMemory: (text: string) => json<Memory>("/api/memories", { method: "POST", body: JSON.stringify({ text }) }),
   deleteMemory: (id: number) => json(`/api/memories/${id}`, { method: "DELETE" }),
+  setMemory: (id: number, text: string) => json(`/api/memories/${id}`, { method: "PATCH", body: JSON.stringify({ text }) }),
   models: () => json<Preset[]>("/api/models"),
   deleteChat: (id: string) => json(`/api/chats/${id}`, { method: "DELETE" }),
   settings: () => json<Settings>("/api/settings"),
@@ -80,6 +83,7 @@ export type SendEvent =
   | { event: "user"; data: Message }
   | { event: "status"; data: { status: string; model?: string } }
   | { event: "reasoning" | "content"; data: { text: string } }
+  | { event: "memory"; data: MemoryChange }
   | { event: "permission"; data: { id: string; tool: string; path: string; action: "read" | "send"; reason?: string } }
   | { event: "tool_call"; data: { id: string; name: string; args: string } }
   | { event: "tool_result"; data: { id: string; result: string; ms: number; error?: boolean; via?: string } }

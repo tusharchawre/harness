@@ -130,13 +130,26 @@ How it works now: `server/src/agent/tools.ts` defines tools (name, description, 
 - read_file also converts Word/RTF/ODT (`textutil`) and PDF (PDFKit via JXA), both built into macOS.
 - Sources = files read, so an unneeded read also shows as a chip. No `quote` yet (sheet opens at the top); RAG (M4) can add cited passages. Source sheet now renders only .md as markdown, other files as plain text.
 
-### M2.4 Tool-calling eval — status: todo
+### M2.4 Tool-calling eval — status: deferred (user: do evals at the end)
 - ~20 prompts → expected tool + args (and "no tool"), run against each preset, report accuracy.
+
+## Milestone 3: memory
+
+Design (roadmap doc, "Memory design notes"): save/update/delete tools for explicit requests, background extraction later; few memories → all in the system prompt, many → embeddings (M4); rolling summary for long chats; never store secrets.
+
+### M3.1 Memories in context + save/update/delete tools — status: done (see git log)
+- `agent/memory.ts`: `memoryPrompt()` adds "[id] fact" lines (newest first, ~4k chars) to every system prompt. `save_memory` takes a list (one fact each; merged facts got clobbered by updates), `update_memory`/`delete_memory` by id. Secret-looking facts are refused server-side. A `memory` SSE event shows "Saved to memory · Undo" under the reply (`MemoryLine.tsx`; PATCH /api/memories/:id for undoing updates).
+- Loop: if a step after tools comes back empty, one nudge "(Reply to the user now…)" (4B went silent after update_memory).
+
+### M3.2 Background extraction — status: todo
+- After a chat goes idle, a 4B pass extracts durable facts the user stated, compares with existing memories, adds/updates/skips.
+
+### M3.3 Rolling summary for long chats — status: todo
+- When the prompt nears the context limit, summarize the oldest messages; keep recent ones verbatim.
 
 ## Later milestones (not now)
 - **Quick Ask panel** (⌥Space, tauri-nspanel): own milestone. Tray "Quick Ask" just opens the main window for now (TODO in `lib.rs`).
 - **Write tools:** call `askPermission` (T4) before any write/delete.
-- **Milestone 3, memory:** facts from Settings › Memory get added to chat context (stored already, not used yet).
 - **Voice:** mic button stays disabled until then.
 
 ## Open issues

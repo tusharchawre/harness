@@ -505,3 +505,10 @@ textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, tran
 
 /* Composer: keep autocorrect, hide the red/green spelling and grammar underlines. */
 .composer textarea::spelling-error, .composer textarea::grammar-error { text-decoration: none; }
+
+/* Memory saved/changed during a reply. */
+.memory-line { margin: 8px 0 2px; display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); animation: rowIn 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.memory-line .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-line .fact { color: var(--text-2); }
+.memory-line.undone .fact { text-decoration: line-through; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .memory-line { animation: none; } }

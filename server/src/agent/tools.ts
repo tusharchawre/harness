@@ -2,6 +2,7 @@
 // format); the chat template turns these into text in the system prompt.
 
 import { findFiles, grepFiles, listFiles, readFile } from "./files";
+import { deleteMemory, saveMemory, updateMemory, type MemoryChange } from "./memory";
 import type { ToolContext } from "./permissions";
 import { fetchPage, webSearch } from "./web";
 
@@ -13,7 +14,7 @@ export type Tool = {
   description: string;
   parameters: Record<string, unknown>; // JSON schema of the arguments object
   // Text goes back to the model; sources and via (which service answered) go to the UI.
-  run(args: Record<string, unknown>, ctx: ToolContext): Promise<string | { text: string; sources?: Source[]; via?: string }>;
+  run(args: Record<string, unknown>, ctx: ToolContext): Promise<string | { text: string; sources?: Source[]; via?: string; memory?: MemoryChange }>;
   available?: () => boolean; // false = not offered to the model right now (e.g. not set up)
 };
 
@@ -41,7 +42,7 @@ const calculator: Tool = {
 };
 
 // Local tools first: small models lean towards the first matching tool, and the web was winning for local questions.
-const allTools: Tool[] = [findFiles, grepFiles, listFiles, readFile, calculator, webSearch, fetchPage];
+const allTools: Tool[] = [findFiles, grepFiles, listFiles, readFile, saveMemory, updateMemory, deleteMemory, calculator, webSearch, fetchPage];
 export const availableTools = () => allTools.filter((t) => t.available?.() ?? true);
 
 // ---- calculator: a small recursive-descent parser (never eval model output) ----

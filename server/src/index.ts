@@ -10,6 +10,7 @@ import { setKey } from "./keychain";
 import { clearExhausted, searchStatus } from "./agent/search";
 import { searx } from "./agent/searxng";
 import { filesAccess, filesFolder, isSecret, resolvePath } from "./agent/files";
+import { memoryPrompt, type MemoryChange } from "./agent/memory";
 import { answer as answerPermission, ask, type ToolContext } from "./agent/permissions";
 import { availableTools, toolSpec, type Source } from "./agent/tools";
 import { OpenAICompatClient, QWEN_SAMPLING, type ChatMessage, type ToolCall } from "./model/client";
@@ -189,6 +190,13 @@ app.post("/api/memories", async (c) => {
   if (!text?.trim()) return c.json({ error: "empty fact" }, 400);
   return c.json(memories.add(text.trim()));
 });
+// Undo of a model edit from the reply.
+app.patch("/api/memories/:id", async (c) => {
+  const { text } = await c.req.json<{ text: string }>();
+  if (!text?.trim()) return c.json({ error: "empty" }, 400);
+  memories.update(Number(c.req.param("id")), text.trim());
+  return c.json({ ok: true });
+});
 app.delete("/api/memories/:id", (c) => {
   memories.delete(Number(c.req.param("id")));
   return c.json({ ok: true });
@@ -206,7 +214,7 @@ const normArgs = (args: string) => {
 
 const MAX_STEPS = 6; // model calls per reply; the last one gets no tools
 
-type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean; via?: string; sources?: Source[] };
+type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean; via?: string; sources?: Source[]; memory?: MemoryChange };
 
 // Errors go back to the model as the tool result, so it can fix its arguments and retry.
 async function runTool(call: ToolCall, ctx: ToolContext): Promise<ToolStep> {
@@ -218,7 +226,7 @@ async function runTool(call: ToolCall, ctx: ToolContext): Promise<ToolStep> {
   if (!tool) return done(`Error: unknown tool "${name}". Available: ${tools.map((t) => t.name).join(", ")}`, true);
   try {
     const out = await tool.run(args ? JSON.parse(args) : {}, ctx);
-    return typeof out === "string" ? done(out) : { ...done(out.text), ...(out.via ? { via: out.via } : {}), sources: out.sources };
+    return typeof out === "string" ? done(out) : { ...done(out.text), ...(out.via ? { via: out.via } : {}), sources: out.sources, memory: out.memory };
   } catch (e) {
     return done(`Error: ${e instanceof Error ? e.message : String(e)}`, true);
   }
@@ -247,6 +255,7 @@ app.post("/api/chats/:id/messages", async (c) => {
   const where = access === "all" ? "can read files on their Mac (paths relative to their home folder)" : `has shared a folder of their own files (${basename(filesFolder() ?? "")})`;
   const system = [
     currentSettings().systemPrompt.trim(),
+    memoryPrompt(),
     access !== "off" &&
       `The user ${where}. When a question is about their plans, notes, documents, code or anything personal you don't know, look before answering or asking them. Questions about their files, projects or code are answered from this Mac, never with web_search: find_files to locate a file by name, grep_files to search inside files, list_files to browse a folder, read_file to read one.`,
   ].filter(Boolean).join("\n\n");
@@ -265,6 +274,7 @@ app.post("/api/chats/:id/messages", async (c) => {
     let text = "";
     let reasoning = "";
     const trace: ToolStep[] = [];
+    let nudged = false;
     const seen = new Map<string, string>(); // tool call (name + args) → result, this reply only
     const ctx: ToolContext = { ask: (req) => ask(send, req, abort.signal), secretRead: null };
     const sources: Source[] = []; // pages/files a tool actually read, in order, no repeats
@@ -317,6 +327,12 @@ app.post("/api/chats/:id/messages", async (c) => {
           }
         });
         text += stepText;
+        // Small models sometimes go silent right after a tool result. Nudge once to reply.
+        if (!calls.length && !stepText.trim() && trace.length && !nudged && step < MAX_STEPS) {
+          nudged = true;
+          prompt.push({ role: "user", content: "(Reply to the user now, based on the tool results above.)" });
+          continue;
+        }
         if (!calls.length) break;
 
         prompt.push({ role: "assistant", content: stepText, tool_calls: calls });
@@ -330,7 +346,8 @@ app.post("/api/chats/:id/messages", async (c) => {
             ? { id: call.id, name: call.function.name, args: call.function.arguments, ms: 0, result: `You already made this exact call in this reply. It returned:\n${earlier.slice(0, 1500)}\n\nDon't repeat it: answer from that, or try a different tool, path or search term.` }
             : await runTool(call, ctx);
           if (!earlier) seen.set(key, ran.result);
-          const { sources: found, ...step } = ran;
+          const { sources: found, memory: change, ...step } = ran;
+          if (change) await send("memory", change);
           trace.push(step);
           await send("tool_result", { id: ran.id, result: ran.result, ms: ran.ms, error: ran.error, via: ran.via });
           const fresh = (found ?? []).filter((s) => !sources.some((x) => x.path === s.path));
@@ -345,7 +362,7 @@ app.post("/api/chats/:id/messages", async (c) => {
     }
 
     text = text.replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, "").trim(); // stray calls written as text
-    if (!text && trace.length && !abort.signal.aborted) text = "_No answer: the model used all its tool steps without replying. Try asking more specifically._";
+    if (!text && trace.length && !abort.signal.aborted) text = "_The model ran its tools but didn't write a reply. Try asking again or more specifically._";
     if (!text && !reasoning && !trace.length) return;
     // Decode speed: generated tokens over the time since the first token (excludes prompt processing).
     const secs = lastStep.firstAt ? (lastStep.endAt - lastStep.firstAt) / 1000 : 0;
