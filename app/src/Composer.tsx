@@ -35,9 +35,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer
         rows={1}
         value={p.value}
         autoFocus
-        // No spell-check underlines, autocorrect, auto-capitals or macOS inline predictive text.
-        spellCheck={false}
-        autoCorrect="off"
+        // Autocorrect stays (ill → I'll); macOS's grey inline predictions are off. Spell-check
+        // underlines are hidden in CSS, since turning spell check off would also stop autocorrect.
         autoCapitalize="off"
         {...{ writingsuggestions: "false" }}
         onChange={(e) => p.onChange(e.target.value)}
