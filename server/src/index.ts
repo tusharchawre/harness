@@ -5,7 +5,8 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { config, DEFAULT_SYSTEM_PROMPT, presetById, presets, type ModelPreset } from "./config";
 import { chats, memories, messages, settings, type Chat } from "./db";
-import { OpenAICompatClient, QWEN_SAMPLING, type ChatMessage } from "./model/client";
+import { tools, toolSpec } from "./agent/tools";
+import { OpenAICompatClient, QWEN_SAMPLING, type ChatMessage, type ToolCall } from "./model/client";
 import { ModelManager } from "./model/manager";
 
 const manager = new ModelManager(Number(settings.get("idleMinutes") ?? config.defaultIdleMinutes));
@@ -171,8 +172,26 @@ app.delete("/api/memories/:id", (c) => {
   return c.json({ ok: true });
 });
 
+const MAX_STEPS = 6; // model calls per reply; the last one gets no tools
+
+type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean };
+
+// Errors go back to the model as the tool result, so it can fix its arguments and retry.
+async function runTool(call: ToolCall): Promise<ToolStep> {
+  const { id, function: { name, arguments: args } } = call;
+  const t0 = performance.now();
+  const done = (result: string, error?: boolean) => ({ id, name, args, result, ms: Math.round(performance.now() - t0), ...(error ? { error } : {}) });
+  const tool = tools.find((t) => t.name === name);
+  if (!tool) return done(`Error: unknown tool "${name}". Available: ${tools.map((t) => t.name).join(", ")}`, true);
+  try {
+    return done(await tool.run(args ? JSON.parse(args) : {}));
+  } catch (e) {
+    return done(`Error: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+}
+
 // Send a user message; the reply streams back as SSE:
-// user → status* → (reasoning | content)* → done | error
+// user → status* → (reasoning | content | tool_call | tool_result)* → done | error
 app.post("/api/chats/:id/messages", async (c) => {
   const chat = chats.get(c.req.param("id"));
   if (!chat) return c.json({ error: "not found" }, 404);
@@ -203,8 +222,9 @@ app.post("/api/chats/:id/messages", async (c) => {
 
     let text = "";
     let reasoning = "";
+    const trace: ToolStep[] = [];
     let usage = { promptTokens: 0, completionTokens: 0 };
-    let firstTokenAt = 0;
+    let lastStep = { tokens: 0, firstAt: 0, endAt: 0 }; // decode speed is measured on the final model call
     let reasoningAt = 0; // first reasoning token
     let answerAt = 0; // first answer token
     const preset = presetById(chat.preset);
@@ -218,33 +238,65 @@ app.post("/api/chats/:id/messages", async (c) => {
       // mlx-vlm enforces the budget itself, but refuses it while a speculative drafter is loaded.
       const budget = thinking && thinkingBudget && !preset.draftModel ? thinkingBudget : undefined;
       let reasoningTokens = 0; // one token per streamed chunk
-      await manager.use(async () => {
-        const req = { model: preset.model, messages: prompt, thinking, thinkingBudget: budget, signal: abort.signal };
-        for await (const ev of client.stream(req)) {
-          if (ev.type === "usage") {
-            usage = ev;
-            continue;
+
+      // The agent loop: call the model; if it asks for tools, run them, append the results to the
+      // prompt and call it again; stop when it answers without a tool call. The last step offers no
+      // tools, so the model has to answer with what it has.
+      for (let step = 1; step <= MAX_STEPS; step++) {
+        const calls: ToolCall[] = [];
+        let stepText = "";
+        let stepFirstAt = 0;
+        await manager.use(async () => {
+          const req = {
+            model: preset.model, messages: prompt, thinking, thinkingBudget: budget, signal: abort.signal,
+            tools: step < MAX_STEPS ? tools.map(toolSpec) : undefined,
+          };
+          for await (const ev of client.stream(req)) {
+            if (ev.type === "usage") {
+              // Prompt tokens of the last call (the full context); completion tokens summed over steps.
+              usage = { promptTokens: ev.promptTokens, completionTokens: usage.completionTokens + ev.completionTokens };
+              lastStep = { tokens: ev.completionTokens, firstAt: stepFirstAt, endAt: performance.now() };
+              continue;
+            }
+            if (ev.type === "tool_call") {
+              calls.push(ev.call);
+              continue;
+            }
+            stepFirstAt ||= performance.now();
+            if (ev.type === "reasoning") (reasoningAt ||= performance.now()), (reasoning += ev.text), reasoningTokens++;
+            else (answerAt ||= performance.now()), (stepText += ev.text);
+            await send(ev.type, { text: ev.text });
           }
-          firstTokenAt ||= performance.now();
-          if (ev.type === "reasoning") (reasoningAt ||= performance.now()), (reasoning += ev.text), reasoningTokens++;
-          else (answerAt ||= performance.now()), (text += ev.text);
-          await send(ev.type, { text: ev.text });
+        });
+        text += stepText;
+        if (!calls.length) break;
+
+        prompt.push({ role: "assistant", content: stepText, tool_calls: calls });
+        for (const call of calls) {
+          await send("tool_call", { id: call.id, name: call.function.name, args: call.function.arguments });
+          const ran = await runTool(call);
+          trace.push(ran);
+          await send("tool_result", { id: ran.id, result: ran.result, ms: ran.ms, error: ran.error });
+          prompt.push({ role: "tool", tool_call_id: call.id, content: ran.result });
         }
-      });
+        if (stepText) (text += "\n\n"), await send("content", { text: "\n\n" });
+      }
       if (budget && reasoningTokens >= budget) reasoning += `\n\n[thinking budget of ${budget} tokens reached]`;
     } catch (e) {
       if (!abort.signal.aborted) await send("error", { message: e instanceof Error ? e.message : String(e) });
     }
 
-    if (!text && !reasoning) return;
+    text = text.trim();
+    if (!text && !reasoning && !trace.length) return;
     // Decode speed: generated tokens over the time since the first token (excludes prompt processing).
-    const secs = firstTokenAt ? (performance.now() - firstTokenAt) / 1000 : 0;
-    const tps = usage.completionTokens > 1 && secs > 0 ? (usage.completionTokens - 1) / secs : null;
+    const secs = lastStep.firstAt ? (lastStep.endAt - lastStep.firstAt) / 1000 : 0;
+    const tps = lastStep.tokens > 1 && secs > 0 ? (lastStep.tokens - 1) / secs : null;
     const saved = messages.add({
       chat_id: chat.id, role: "assistant", content: text, reasoning: reasoning || null, model,
       thinking: thinking ? 1 : 0, prompt_tokens: usage.promptTokens || null,
       completion_tokens: usage.completionTokens || null, tokens_per_sec: tps,
       thinking_ms: reasoningAt ? Math.round((answerAt || performance.now()) - reasoningAt) : null,
+      tools: trace.length ? JSON.stringify(trace) : null,
     });
     chats.touch(chat.id);
     if (!abort.signal.aborted) await send("done", saved);

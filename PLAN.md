@@ -109,9 +109,27 @@ Files: `app/src-tauri/Cargo.toml`, `Cargo.lock`
 - Was:
 - During T8's first smoke run the harness process died while the model was loading. There was no crash report, and it didn't happen again after a relaunch. The first `POST /api/chats` right after launch also returned an empty body (the server probably wasn't up yet). Reproduce with a cold launch, then send a message right away; check the sidecar parent-PID watch and the stdin "shutdown" handling in `server/src/index.ts`.
 
+## Milestone 2: agent loop + tools
+
+Spec (roadmap doc, "Harness build"): hand-written loop, max-steps cap; tools: web search (SearXNG, native via uv, started on demand, killed after 10 idle min), fetch page as text, calculator, read local files in an allowed folder; show each call in the UI; small tool-calling eval (prompts → expected tool + args). The user reviews each step and must be able to explain the loop, how tool calls are parsed, and what goes into the context each turn.
+
+How it works now: `server/src/agent/tools.ts` defines tools (name, description, JSON schema, `run`). The message endpoint loops up to `MAX_STEPS` (6) model calls; tools are passed as OpenAI `tools`, mlx-vlm's Qwen parser turns `<tool_call>` text into streamed `tool_calls` deltas, `client.ts` stitches them by index. Results go back as `role: "tool"` messages. The last step gets no tools so it must answer. The trace is saved in `messages.tools`; later turns only see final answers, not tool results.
+
+### M2.1 Loop + calculator — status: done (see git log)
+- Checked live: single call, two chained calls with Think on, plain chat unchanged. tok/s now = the final step only.
+
+### M2.2 Web search (SearXNG) + fetch page — status: todo
+- SearXNG from source with uv, JSON format on, managed like `ModelManager` (lazy start, idle kill). `fetch_page` = HTML → readable text, capped length. Emit `sources` for cited pages.
+
+### M2.3 read_file in an allowed folder — status: todo
+- Folder set in Settings; refuse paths outside it (resolve symlinks). Emit `sources` with the quoted passage so the source sheet (T3) gets real data.
+
+### M2.4 Tool-calling eval — status: todo
+- ~20 prompts → expected tool + args (and "no tool"), run against each preset, report accuracy.
+
 ## Later milestones (not now)
 - **Quick Ask panel** (⌥Space, tauri-nspanel): own milestone. Tray "Quick Ask" just opens the main window for now (TODO in `lib.rs`).
-- **Milestone 2, tools:** the agent emits `tool_call` / `tool_result` / `sources` and calls `askPermission` (T4) before writes/deletes.
+- **Write tools:** call `askPermission` (T4) before any write/delete.
 - **Milestone 3, memory:** facts from Settings › Memory get added to chat context (stored already, not used yet).
 - **Voice:** mic button stays disabled until then.
 

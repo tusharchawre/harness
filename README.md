@@ -27,6 +27,12 @@ React UI (Tauri webview) ⇄ SSE ⇄ bun sidecar (Hono, SQLite, model manager) �
 - Thinking budget (default 1024 tokens), enforced by mlx-vlm's `thinking_budget`. **Not applied to MTP presets**: mlx-vlm refuses a budget while a speculative drafter is loaded, so 9B + MTP thinks uncapped for now
 - Sampling follows the Qwen3.5 model card (`QWEN_SAMPLING` in `client.ts`); greedy decoding makes thinking loop
 
+## Milestone 2: Tools (in progress)
+
+- Hand-written agent loop in `server/src/index.ts`: model → tool calls → run → results back → repeat, max 6 model calls per reply
+- Tools live in `server/src/agent/tools.ts`. Done: `calculator` (own parser, never `eval`). Next: web search, fetch page, read file
+- Each call and result shows under the reply ("Used N tools") and is saved with the message
+
 ## Requirements
 
 - bun, uv, Rust (`rustup`), Xcode command line tools
