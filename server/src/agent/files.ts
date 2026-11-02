@@ -5,8 +5,8 @@ import { realpathSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
-import { DATA_DIR } from "../config";
 import { settings } from "../db";
+import { isSecret } from "./secrets";
 import type { Tool } from "./tools";
 
 const MAX_LIST = 300;
@@ -14,6 +14,9 @@ const MAX_FILE_BYTES = 1_000_000;
 const MAX_READ_CHARS = 12_000; // ~3k tokens per call; the model pages with start_line
 // Not walked into when listing recursively (still listable by naming them directly).
 const SKIP = new Set(["node_modules", ".venv", "__pycache__", "dist", "build", ".next", "target", "Library", "Applications", "System", "Volumes", "private", "dev", "cores"]);
+
+export { isSecret };
+const H = homedir();
 
 export type FilesAccess = "off" | "folder" | "all";
 export const filesAccess = (): FilesAccess => {
@@ -32,27 +35,12 @@ function root(): { dir: string; base: string } {
   return { dir, base: dir };
 }
 
-// ---- secrets ----
-const H = homedir();
-const SECRET_DIRS = [
-  ".ssh", ".aws", ".gnupg", ".azure", ".kube", ".docker", ".password-store", ".config/gcloud", ".config/gh", ".config/op",
-  "Library/Keychains", "Library/Cookies", "Library/Safari", "Library/Mail", "Library/Messages", "Library/Accounts",
-  "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox", "Library/Application Support/BraveSoftware",
-  "Library/Application Support/Arc", "Library/Application Support/Microsoft Edge", "Library/Application Support/1Password",
-].map((d) => join(H, d));
-const SECRET_SYSTEM = ["/Library/Keychains", "/private/var/db", "/private/etc/master.passwd", "/private/etc/sudoers"];
-const SECRET_FILE =
-  /^(\.env(\..+)?|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.htpasswd|id_(rsa|dsa|ecdsa|ed25519)|credentials(\.json)?|secrets?\.(json|ya?ml|toml)|service[-_]?account.*\.json|.*\.(pem|key|p12|pfx|kdbx|keychain|keychain-db|jks|keystore|ovpn))$/i;
-
-export function isSecret(real: string) {
-  const under = (d: string) => real === d || real.startsWith(d + sep);
-  return SECRET_FILE.test(basename(real)) || [...SECRET_DIRS, ...SECRET_SYSTEM, DATA_DIR].some(under);
-}
-
 // Resolves a path the model gave (relative, ~/…, or absolute) through symlinks and refuses
 // anything outside the allowed root, so a link can't point out of a shared folder.
 export function resolvePath(p: string): string {
   const { dir, base } = root();
+  // Small models sometimes send the path as a JSON array or quoted string: ["~/a.md"].
+  p = p.trim().replace(/^\[\s*"(.*)"\s*\]$/, "$1").replace(/^"(.*)"$/, "$1");
   const target = resolve(base, p.replace(/^~(?=\/|$)/, H));
   let real: string;
   try {
@@ -112,7 +100,7 @@ export const listFiles: Tool = {
 export const readFile: Tool = {
   name: "read_file",
   description:
-    "Read a text file the user has shared. Returns numbered lines; long files come in parts, " +
+    "Read a file the user has shared: text, code, Word (.docx/.doc), RTF, ODT or PDF. Returns numbered lines; long files come in parts, " +
     "so pass start_line to continue. Answer from the file's actual text and say which file you used.",
   parameters: {
     type: "object",
@@ -131,12 +119,7 @@ export const readFile: Tool = {
       if (!(await ctx.ask({ tool: "read_file", path, action: "read" }))) throw new Error("the user declined to share this file");
       ctx.secretRead ??= path;
     }
-    const file = Bun.file(path);
-    if (file.size > MAX_FILE_BYTES) throw new Error(`file is ${size(file.size)}; the limit is ${size(MAX_FILE_BYTES)}`);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (bytes.subarray(0, 8000).includes(0)) throw new Error("not a text file");
-
-    const lines = new TextDecoder().decode(bytes).split("\n");
+    const lines = (await fileText(path)).split("\n");
     const start = Math.max(1, Math.floor(Number(args.start_line) || 1));
     let text = "";
     let end = start - 1;
@@ -147,5 +130,32 @@ export const readFile: Tool = {
     return { text: `${shown(path)}\n${text}${rest}`, sources: secret ? [] : [{ path, title: basename(path) }] };
   },
 };
+
+// Word, RTF, ODT and PDF go through macOS's own converters; anything else must be plain text.
+const DOCUMENT = /\.(docx?|rtf|rtfd|odt|wordml|webarchive)$/i;
+const MAX_DOCUMENT_BYTES = 50_000_000;
+async function fileText(path: string): Promise<string> {
+  const file = Bun.file(path);
+  const limit = DOCUMENT.test(path) || /\.pdf$/i.test(path) ? MAX_DOCUMENT_BYTES : MAX_FILE_BYTES;
+  if (file.size > limit) throw new Error(`file is ${size(file.size)}; the limit is ${size(limit)}`);
+  if (DOCUMENT.test(path)) return run(["textutil", "-convert", "txt", "-stdout", path]);
+  if (/\.pdf$/i.test(path)) {
+    // PDFKit through JavaScript for Automation: no extra install.
+    const js = `ObjC.import("PDFKit"); const d = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(${JSON.stringify(path)})); d.isNil() ? "" : ObjC.unwrap(d.string)`;
+    const text = await run(["osascript", "-l", "JavaScript", "-e", js]);
+    if (!text.trim()) throw new Error("no text in this PDF (it may be scanned images)");
+    return text;
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.subarray(0, 8000).includes(0)) throw new Error("not a text file (supported: text, Word, RTF, ODT, PDF)");
+  return new TextDecoder().decode(bytes);
+}
+
+async function run(cmd: string[]) {
+  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  if (code !== 0) throw new Error(`couldn't convert this file: ${err.trim().slice(0, 200)}`);
+  return out;
+}
 
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`);
