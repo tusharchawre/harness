@@ -86,9 +86,42 @@ export const listFiles: Tool = {
 // Paths no search should return: dependency, build, cache and app-internal folders.
 const NOISE = /\/(node_modules|\.git|\.venv|venv|__pycache__|\.next|dist|build|target|\.Trash|\.cache|Caches|DerivedData|Pods|vendor|\.gradle|\.npm|\.bun)\/|\.app\/Contents\//;
 
-// By name: `find` with dependency, build, hidden and app-bundle folders pruned. Spotlight (mdfind)
-// was tried first but returns nothing for privacy-protected folders when run inside the app.
-const PRUNE = ["node_modules", "vendor", "__pycache__", "DerivedData", "Pods", "target", "build", "dist", ".*", "*.app", "*.photoslibrary"];
+// By name, walking folders in this process. Spotlight (mdfind) and `find` both returned nothing
+// for privacy-protected folders (Downloads) when launched from inside the app, while this
+// process's own readdir can read them.
+const PRUNE = new Set(["node_modules", "vendor", "__pycache__", "DerivedData", "Pods", "target", "build", "dist"]);
+const PRUNE_EXT = /\.(app|photoslibrary|xcarchive|bundle|framework)$/i;
+const FIND_BUDGET_MS = 8000;
+async function walkFind(root: string, needle: string, skipLibrary: boolean): Promise<string[]> {
+  const hits: string[] = [];
+  const deadline = Date.now() + FIND_BUDGET_MS;
+  let level = [root];
+  while (level.length && hits.length < 500 && Date.now() < deadline) {
+    const next: string[] = [];
+    // One directory level at a time, read in parallel: nearest matches come first.
+    for (let i = 0; i < level.length && Date.now() < deadline; i += 64) {
+      await Promise.all(
+        level.slice(i, i + 64).map(async (dir) => {
+          let entries;
+          try {
+            entries = await readdir(dir, { withFileTypes: true });
+          } catch {
+            return; // unreadable (privacy-protected without access) or gone
+          }
+          for (const e of entries) {
+            const full = join(dir, e.name);
+            if (e.name.toLowerCase().includes(needle)) hits.push(full);
+            if (!e.isDirectory() || e.name.startsWith(".") || PRUNE.has(e.name) || PRUNE_EXT.test(e.name)) continue;
+            if (skipLibrary && full === join(H, "Library")) continue;
+            next.push(full);
+          }
+        }),
+      );
+    }
+    level = next;
+  }
+  return hits.filter((p) => !NOISE.test(p));
+}
 export const findFiles: Tool = {
   name: "find_files",
   description:
@@ -107,15 +140,8 @@ export const findFiles: Tool = {
     const name = String(args.name ?? "").trim().replace(/[*?[\]]/g, "");
     if (!name) throw new Error("name is empty");
     const dir = resolvePath(String(args.path ?? "."));
-    const prune = [...PRUNE, ...(dir.includes("/Library") ? [] : ["Library"])];
-    const pruneArgs = prune.flatMap((n, i) => [...(i ? ["-o"] : []), "-name", n]);
-    // -mindepth 1 so the starting folder itself is never pruned (e.g. searching inside ~/.config).
-    const cmd = ["find", dir, "-mindepth", "1", "(", "-type", "d", "(", ...pruneArgs, ")", ")", "-prune", "-o", "-iname", `*${name}*`, "-print"];
-    const out = await run(cmd, 10_000, true);
-    const hits = out
-      .split("\n")
-      .filter((p) => p && !NOISE.test(p))
-      .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
+    const hits = await walkFind(dir, name.toLowerCase(), !dir.includes("/Library"));
+    hits.sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
     if (!hits.length) return `No files named like "${name}" in ${shown(dir)}. Try a shorter or different word, or grep_files to search inside files.`;
     const MAX = 50;
     return hits.slice(0, MAX).map((p) => tagged(p, shown(p) + (statSync(p, { throwIfNoEntry: false })?.isDirectory() ? "/" : ""))).join("\n") + (hits.length > MAX ? `\n[${hits.length - MAX} more; narrow the name or path]` : "");
