@@ -92,6 +92,7 @@ export function isSecret(real: string): boolean {
   const under = (d: string) => real === d || real.startsWith(d + sep);
   if ([...HOME_DIRS, ...SYSTEM_DIRS, DATA_DIR].some(under)) return true;
   if (real.split(sep).some((s) => SEGMENT.test(s))) return true;
+  if (/\.(example|sample|template|dist|defaults?)$/i.test(name)) return false; // .env.example and friends are templates
   if (NAMES.has(lower) || PATTERNS.some((p) => p.test(name))) return true;
   if (WORD.test(name.replace(/^\./, "")) && CONFIG_EXT.test(name.replace(/^\./, ""))) return true;
   return looksLikeKey(real);

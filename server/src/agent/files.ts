@@ -85,37 +85,40 @@ export const listFiles: Tool = {
 
 // Paths no search should return: dependency, build, cache and app-internal folders.
 const NOISE = /\/(node_modules|\.git|\.venv|venv|__pycache__|\.next|dist|build|target|\.Trash|\.cache|Caches|DerivedData|Pods|vendor|\.gradle|\.npm|\.bun)\/|\.app\/Contents\//;
-const hiddenDir = (p: string) => /\/\.[^/]+\//.test(p);
 
-// By name, through Spotlight's index: whole-home searches in well under a second.
+// By name: `find` with dependency, build, hidden and app-bundle folders pruned. Spotlight (mdfind)
+// was tried first but returns nothing for privacy-protected folders when run inside the app.
+const PRUNE = ["node_modules", "vendor", "__pycache__", "DerivedData", "Pods", "target", "build", "dist", ".*", "*.app", "*.photoslibrary"];
 export const findFiles: Tool = {
   name: "find_files",
   description:
-    "Find files and folders by name (case-insensitive, partial match), using the Mac's Spotlight index. Fast even across the whole Mac. " +
-    "Returns paths, shallowest first. Use a distinctive word from the file name, e.g. resume, invoice, todo.",
+    "Find files and folders by name (case-insensitive, partial match). Fast even across the whole Mac. " +
+    "Returns paths, shallowest first. Use a distinctive word from the name, e.g. resume, invoice, harness.",
   parameters: {
     type: "object",
     properties: {
-      name: { type: "string", description: "Part of the file name" },
+      name: { type: "string", description: "Part of the file or folder name" },
       path: { type: "string", description: "Folder to search in. Omit for everything shared." },
     },
     required: ["name"],
   },
   available: () => filesAccess() !== "off",
   async run(args) {
-    const name = String(args.name ?? "").trim();
+    const name = String(args.name ?? "").trim().replace(/[*?[\]]/g, "");
     if (!name) throw new Error("name is empty");
     const dir = resolvePath(String(args.path ?? "."));
-    const out = await run(["mdfind", "-name", name, "-onlyin", dir], 10_000);
-    const inLibrary = dir.includes("/Library");
+    const prune = [...PRUNE, ...(dir.includes("/Library") ? [] : ["Library"])];
+    const pruneArgs = prune.flatMap((n, i) => [...(i ? ["-o"] : []), "-name", n]);
+    // -mindepth 1 so the starting folder itself is never pruned (e.g. searching inside ~/.config).
+    const cmd = ["find", dir, "-mindepth", "1", "(", "-type", "d", "(", ...pruneArgs, ")", ")", "-prune", "-o", "-iname", `*${name}*`, "-print"];
+    const out = await run(cmd, 10_000, true);
     const hits = out
       .split("\n")
-      .filter(Boolean)
-      .filter((p) => !NOISE.test(p) && (inLibrary || !p.includes(`${H}/Library/`)) && (!hiddenDir(p.slice(dir.length)) || isSecret(p)))
+      .filter((p) => p && !NOISE.test(p))
       .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
     if (!hits.length) return `No files named like "${name}" in ${shown(dir)}. Try a shorter or different word, or grep_files to search inside files.`;
     const MAX = 50;
-    return hits.slice(0, MAX).map((p) => tagged(p, shown(p))).join("\n") + (hits.length > MAX ? `\n[${hits.length - MAX} more; narrow the name or path]` : "");
+    return hits.slice(0, MAX).map((p) => tagged(p, shown(p) + (statSync(p, { throwIfNoEntry: false })?.isDirectory() ? "/" : ""))).join("\n") + (hits.length > MAX ? `\n[${hits.length - MAX} more; narrow the name or path]` : "");
   },
 };
 
@@ -247,10 +250,11 @@ async function fileText(path: string): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
-async function run(cmd: string[], timeoutMs = 60_000) {
+// partialOk: keep stdout even on a non-zero exit or timeout (find exits 1 on folders it can't read).
+async function run(cmd: string[], timeoutMs = 60_000, partialOk = false) {
   const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", timeout: timeoutMs });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-  if (code !== 0) throw new Error(`couldn't convert this file: ${err.trim().slice(0, 200)}`);
+  if (code !== 0 && !partialOk) throw new Error(`couldn't convert this file: ${err.trim().slice(0, 200)}`);
   return out;
 }
 
