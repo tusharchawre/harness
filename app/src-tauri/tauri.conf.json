@@ -46,6 +46,10 @@
     ],
     "externalBin": [
       "binaries/harness-server"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "Harness Local Signing",
+      "entitlements": "Entitlements.plist"
+    }
   }
 }

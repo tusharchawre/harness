@@ -55,6 +55,20 @@ This runs the server with `--watch` on 127.0.0.1:8787 and `tauri dev` (Vite on :
 
 Server alone: `cd server && bun run dev`.
 
+## Signing (one-time setup per Mac)
+
+Builds are signed with a self-signed certificate, "Harness Local Signing", in the login Keychain, so macOS keeps privacy permissions like Full Disk Access across rebuilds (ad-hoc signatures change every build). To create it on a new Mac:
+
+```sh
+D="$HOME/Library/Application Support/harness/signing"; mkdir -p "$D" && cd "$D"
+printf '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Harness Local Signing\n[ext]\nbasicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n' > cert.cnf
+/usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 7300 -config cert.cnf
+/usr/bin/openssl pkcs12 -export -inkey key.pem -in cert.pem -name "Harness Local Signing" -out cert.p12 -passout pass:tmp
+security import cert.p12 -k ~/Library/Keychains/login.keychain-db -P tmp -T /usr/bin/codesign && rm key.pem cert.p12
+```
+
+`security find-identity` lists it as "not trusted"; that's fine, codesign uses it anyway. `Entitlements.plist` allows JIT for the bun sidecar under the hardened runtime.
+
 ## Build the .app
 
 ```sh
