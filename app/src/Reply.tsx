@@ -104,7 +104,7 @@ export function ReplyExtras(props: {
             {tools.map((t) => (
               <div key={t.id} className="trace-row">
                 <span className="call" title={callLabel(t)}>{callLabel(t)}</span>
-                <span className="time">{t.result === undefined ? <span className="spinner" aria-label="Running" /> : duration(t.ms)}</span>
+                <span className="time">{t.result === undefined ? <span className="spinner" aria-label="Running" /> : [t.via, duration(t.ms)].filter(Boolean).join(" · ")}</span>
                 {t.result !== undefined && <span className={"result" + (t.error ? " err" : "")}>{t.result}</span>}
               </div>
             ))}

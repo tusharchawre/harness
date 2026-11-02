@@ -1,11 +1,17 @@
 // Tools the agent can call. Each one is described to the model as a JSON schema (OpenAI "function"
 // format); the chat template turns these into text in the system prompt.
 
+import { fetchPage, webSearch } from "./web";
+
+// A source the answer can cite: shown as a chip under the reply. `path` is a file path or a URL.
+export type Source = { path: string; title?: string; quote?: string };
+
 export type Tool = {
   name: string;
   description: string;
   parameters: Record<string, unknown>; // JSON schema of the arguments object
-  run(args: Record<string, unknown>): Promise<string>;
+  // Text goes back to the model; sources and via (which service answered) go to the UI.
+  run(args: Record<string, unknown>): Promise<string | { text: string; sources?: Source[]; via?: string }>;
 };
 
 export const toolSpec = (t: Tool) => ({
@@ -31,7 +37,7 @@ const calculator: Tool = {
   },
 };
 
-export const tools: Tool[] = [calculator];
+export const tools: Tool[] = [calculator, webSearch, fetchPage];
 
 // ---- calculator: a small recursive-descent parser (never eval model output) ----
 // expr   = term (("+" | "-") term)*

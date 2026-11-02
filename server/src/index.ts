@@ -5,7 +5,10 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { config, DEFAULT_SYSTEM_PROMPT, presetById, presets, type ModelPreset } from "./config";
 import { chats, memories, messages, settings, type Chat } from "./db";
-import { tools, toolSpec } from "./agent/tools";
+import { setKey } from "./keychain";
+import { clearExhausted, searchStatus } from "./agent/search";
+import { searx } from "./agent/searxng";
+import { tools, toolSpec, type Source } from "./agent/tools";
 import { OpenAICompatClient, QWEN_SAMPLING, type ChatMessage, type ToolCall } from "./model/client";
 import { ModelManager } from "./model/manager";
 
@@ -174,7 +177,7 @@ app.delete("/api/memories/:id", (c) => {
 
 const MAX_STEPS = 6; // model calls per reply; the last one gets no tools
 
-type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean };
+type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean; via?: string; sources?: Source[] };
 
 // Errors go back to the model as the tool result, so it can fix its arguments and retry.
 async function runTool(call: ToolCall): Promise<ToolStep> {
@@ -184,7 +187,8 @@ async function runTool(call: ToolCall): Promise<ToolStep> {
   const tool = tools.find((t) => t.name === name);
   if (!tool) return done(`Error: unknown tool "${name}". Available: ${tools.map((t) => t.name).join(", ")}`, true);
   try {
-    return done(await tool.run(args ? JSON.parse(args) : {}));
+    const out = await tool.run(args ? JSON.parse(args) : {});
+    return typeof out === "string" ? done(out) : { ...done(out.text), ...(out.via ? { via: out.via } : {}), sources: out.sources };
   } catch (e) {
     return done(`Error: ${e instanceof Error ? e.message : String(e)}`, true);
   }
@@ -223,6 +227,7 @@ app.post("/api/chats/:id/messages", async (c) => {
     let text = "";
     let reasoning = "";
     const trace: ToolStep[] = [];
+    const sources: Source[] = []; // pages/files a tool actually read, in order, no repeats
     let usage = { promptTokens: 0, completionTokens: 0 };
     let lastStep = { tokens: 0, firstAt: 0, endAt: 0 }; // decode speed is measured on the final model call
     let reasoningAt = 0; // first reasoning token
@@ -275,8 +280,11 @@ app.post("/api/chats/:id/messages", async (c) => {
         for (const call of calls) {
           await send("tool_call", { id: call.id, name: call.function.name, args: call.function.arguments });
           const ran = await runTool(call);
-          trace.push(ran);
-          await send("tool_result", { id: ran.id, result: ran.result, ms: ran.ms, error: ran.error });
+          const { sources: found, ...step } = ran;
+          trace.push(step);
+          await send("tool_result", { id: ran.id, result: ran.result, ms: ran.ms, error: ran.error, via: ran.via });
+          const fresh = (found ?? []).filter((s) => !sources.some((x) => x.path === s.path));
+          if (fresh.length) sources.push(...fresh), await send("sources", sources);
           prompt.push({ role: "tool", tool_call_id: call.id, content: ran.result });
         }
         if (stepText) (text += "\n\n"), await send("content", { text: "\n\n" });
@@ -297,11 +305,28 @@ app.post("/api/chats/:id/messages", async (c) => {
       completion_tokens: usage.completionTokens || null, tokens_per_sec: tps,
       thinking_ms: reasoningAt ? Math.round((answerAt || performance.now()) - reasoningAt) : null,
       tools: trace.length ? JSON.stringify(trace) : null,
+      sources: sources.length ? JSON.stringify(sources) : null,
     });
     chats.touch(chat.id);
     if (!abort.signal.aborted) await send("done", saved);
     if (placeholder && text) void nameChat(chat.id, placeholder, preset, content, text);
   });
+});
+
+// Web search backends: keys live in the Keychain and are never sent back to the UI.
+app.get("/api/search", (c) => c.json(searchStatus()));
+app.put("/api/search/keys", async (c) => {
+  const body = await c.req.json<Partial<Record<"tavily" | "exa", string>>>();
+  try {
+    for (const id of ["tavily", "exa"] as const) {
+      if (typeof body[id] !== "string") continue;
+      setKey(id, body[id]);
+      clearExhausted(id); // a new key may come with fresh quota
+    }
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+  return c.json(searchStatus());
 });
 
 // ---- lifecycle ----
@@ -310,11 +335,12 @@ function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   manager.killNow();
+  searx.stop();
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-process.on("exit", () => manager.killNow());
+process.on("exit", () => (manager.killNow(), searx.stop()));
 
 // As a Tauri sidecar: the app writes "shutdown" to stdin on quit. stdin can read as closed from
 // the start under Tauri, so EOF isn't a quit signal; instead exit once the app's process is gone.

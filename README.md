@@ -1,6 +1,6 @@
 # Harness
 
-Local-only Mac app for chatting with open models. No paid APIs, nothing leaves the machine.
+Mac app for chatting with open models that run locally. The model and chat history never leave the machine; web search queries go to Tavily or Exa (free tiers) with local SearXNG as the fallback.
 
 ```
 React UI (Tauri webview) ⇄ SSE ⇄ bun sidecar (Hono, SQLite, model manager) ⇄ HTTP ⇄ mlx_vlm.server ⇄ GPU
@@ -30,7 +30,10 @@ React UI (Tauri webview) ⇄ SSE ⇄ bun sidecar (Hono, SQLite, model manager) �
 ## Milestone 2: Tools (in progress)
 
 - Hand-written agent loop in `server/src/index.ts`: model → tool calls → run → results back → repeat, max 6 model calls per reply
-- Tools live in `server/src/agent/tools.ts`. Done: `calculator` (own parser, never `eval`). Next: web search, fetch page, read file
+- Tools live in `server/src/agent/tools.ts`. Done: `calculator` (own parser, never `eval`), `web_search`, `fetch_page`. Next: read file
+- `web_search` tries Tavily → Exa → SearXNG (`agent/search.ts`). Errors and 8 s timeouts fall through to the next one; a used-up quota (Tavily 432/433, Exa 402) is skipped until the 1st of next month. Keys: Settings › Tools, stored in the Keychain (service "Harness"). Per-service monthly counts show there too
+- SearXNG runs from source (no Docker): run `server/scripts/setup-searxng.sh` once. The server starts it on demand and stops it after 10 idle minutes
+- `fetch_page` uses Readability for the main text (8,000 characters max) and refuses localhost / private-network URLs, including names that resolve to them. Fetched pages show as source chips that open in the browser
 - Each call and result shows under the reply ("Used N tools") and is saved with the message
 
 ## Requirements

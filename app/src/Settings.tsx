@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type Memory, type Preset, type Settings } from "./api";
+import { api, type Memory, type Preset, type SearchBackend, type Settings } from "./api";
 import { Icon, type IconName } from "./icons";
 
 export type Pane = "general" | "models" | "tools" | "memory" | "voice";
@@ -7,7 +7,7 @@ export type Pane = "general" | "models" | "tools" | "memory" | "voice";
 const PANES: { id: Pane; label: string; icon: IconName; keywords: string }[] = [
   { id: "general", label: "General", icon: "general", keywords: "model idle unload think budget system prompt memory" },
   { id: "models", label: "Models", icon: "models", keywords: "model size speed humaneval qwen mtp" },
-  { id: "tools", label: "Tools", icon: "tools", keywords: "tools permissions files write" },
+  { id: "tools", label: "Tools", icon: "tools", keywords: "tools permissions files write web search tavily exa searxng api key keychain usage" },
   { id: "memory", label: "Memory", icon: "memory", keywords: "memory facts" },
   { id: "voice", label: "Voice", icon: "voice", keywords: "voice mic speech" },
 ];
@@ -141,7 +141,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
                     {pane === "general" && <RuntimeGroup s={s} presets={presets} save={save} />}
                     {pane === "general" && <SystemPrompt value={s.systemPrompt} save={save} />}
                     {(pane === "general" || pane === "memory") && <MemoryList memories={memories} setMemories={setMemories} />}
-                    {pane === "tools" && <Placeholder>Tools arrive in Milestone 2. Anything that writes or deletes files will ask first.</Placeholder>}
+                    {pane === "tools" && <SearchBackends />}
                     {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
                   </>
                 )}
@@ -427,6 +427,72 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
       </div>
       <div className="footnote">Facts saved here are added to chats once memory ships (Milestone 3).</div>
     </section>
+  );
+}
+
+// Web search tries these top to bottom. Keys go straight to the Keychain via the server.
+function SearchBackends() {
+  const [list, setList] = useState<SearchBackend[] | null>(null);
+  useEffect(() => void api.searchBackends().then(setList).catch(() => {}), []);
+  const month = new Date().toLocaleDateString(undefined, { month: "long" });
+  return (
+    <section className="block" aria-label="Web search">
+      <div className="caption split">
+        <span>Web search</span>
+        <span>Searches in {month}</span>
+      </div>
+      <div className="group">
+        {list?.map((b, i) => <BackendRow key={b.id} b={b} order={i + 1} onSaved={setList} />)}
+      </div>
+      <div className="footnote">
+        Tried in this order. A service is skipped on an error or after 8 s, and skipped until the 1st of next month once its free quota is used up (Tavily: 1,000 searches a month; Exa: $10 a month, about 1,400). Keys are stored in the macOS Keychain.
+      </div>
+    </section>
+  );
+}
+
+function BackendRow({ b, order, onSaved }: { b: SearchBackend; order: number; onSaved: (l: SearchBackend[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const save = (key: string) => {
+    if (!b.needsKey || (!key && !b.hasKey)) return;
+    api.saveSearchKeys({ [b.id]: key }).then((l) => (onSaved(l), setDraft(""), setError(null)), (e: Error) => setError(e.message));
+  };
+  const until = b.exhaustedUntil && new Date(b.exhaustedUntil).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const status = error ?? (!b.needsKey ? "Runs on this Mac" : until ? `Quota used up · skipped until ${until}` : b.hasKey ? "Key saved in Keychain" : "No key · skipped");
+  return (
+    <div className="row">
+      <div className="grow">
+        <div>
+          {order}. {b.label}
+        </div>
+        <div className={"sub" + (error ? " err" : "")}>{status}</div>
+      </div>
+      {b.needsKey && (
+        <>
+          <input
+            className="keyfield"
+            type="password"
+            aria-label={`${b.label} API key`}
+            placeholder={b.hasKey ? "••••••••••••" : "Paste API key"}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && draft.trim() && save(draft)}
+            onBlur={() => draft.trim() && save(draft)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <span className="remove-slot">
+            {b.hasKey && (
+              <button className="link-button" onClick={() => save("")}>
+                Remove
+              </button>
+            )}
+          </span>
+        </>
+      )}
+      <span className="count">{b.searches.toLocaleString()}</span>
+    </div>
   );
 }
 

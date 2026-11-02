@@ -6,7 +6,7 @@ import { useFollow } from "./follow";
 import { Markdown } from "./Markdown";
 import { ReplyExtras } from "./Reply";
 import { SourceSheet } from "./SourceSheet";
-import { onMenu, onOpenSettings, setModelMenu } from "./native";
+import { onMenu, onOpenSettings, openUrl, setModelMenu } from "./native";
 import { isPane, SettingsModal, type Pane } from "./Settings";
 import { Sidebar, WindowButtons } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
@@ -209,12 +209,16 @@ export function App() {
   const chips = (key: string | number, list: Source[]) =>
     list.length > 0 && (
       <div className="chips">
-        {list.map((s, i) => (
-          <button key={i} className={"chip" + (source?.key === `${key}:${i}` && !source.closing ? " active" : "")} title={s.path} onClick={() => openSource(`${key}:${i}`, s)}>
-            <Icon name="doc" size={11} stroke={2} />
-            {s.title ?? s.path.split("/").pop()}
-          </button>
-        ))}
+        {list.map((s, i) => {
+          // Web pages open in the browser; local files open in the source sheet.
+          const web = /^https?:/.test(s.path);
+          return (
+            <button key={i} className={"chip" + (source?.key === `${key}:${i}` && !source.closing ? " active" : "")} title={s.path} onClick={() => (web ? openUrl(s.path) : openSource(`${key}:${i}`, s))}>
+              <Icon name={web ? "globe" : "doc"} size={11} stroke={2} />
+              {s.title ?? s.path.split("/").pop()}
+            </button>
+          );
+        })}
       </div>
     );
 

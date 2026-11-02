@@ -24,7 +24,9 @@ export type Message = {
 };
 
 // Agent tool trace (Milestone 2 sends these; rendered whenever they exist).
-export type ToolStep = { id: string; name: string; args: string; result?: string; ms?: number; error?: boolean };
+export type ToolStep = { id: string; name: string; args: string; result?: string; ms?: number; error?: boolean; via?: string };
+// A web_search backend as Settings › Tools shows it. Keys stay in the Keychain; only hasKey comes back.
+export type SearchBackend = { id: "tavily" | "exa" | "searxng"; label: string; needsKey: boolean; hasKey: boolean; searches: number; exhaustedUntil: number | null };
 // A cited file: `quote` is the passage to highlight.
 export type Source = { path: string; title?: string; quote?: string };
 
@@ -59,6 +61,8 @@ export const api = {
   settings: () => json<Settings>("/api/settings"),
   saveSettings: (s: Partial<Settings>) => json<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   loadModel: (preset: string) => json<ModelState>("/api/model/load", { method: "POST", body: JSON.stringify({ preset }) }),
+  searchBackends: () => json<SearchBackend[]>("/api/search"),
+  saveSearchKeys: (keys: Partial<Record<"tavily" | "exa", string>>) => json<SearchBackend[]>("/api/search/keys", { method: "PUT", body: JSON.stringify(keys) }),
   unloadModel: () => json<ModelState>("/api/model/unload", { method: "POST" }),
 };
 
@@ -75,7 +79,7 @@ export type SendEvent =
   | { event: "status"; data: { status: string; model?: string } }
   | { event: "reasoning" | "content"; data: { text: string } }
   | { event: "tool_call"; data: { id: string; name: string; args: string } }
-  | { event: "tool_result"; data: { id: string; result: string; ms: number; error?: boolean } }
+  | { event: "tool_result"; data: { id: string; result: string; ms: number; error?: boolean; via?: string } }
   | { event: "sources"; data: Source[] }
   | { event: "done"; data: Message }
   | { event: "error"; data: { message: string } };

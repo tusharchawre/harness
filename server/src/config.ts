@@ -61,5 +61,9 @@ export const config = {
   uvBin: findUv(),
   dbPath: join(DATA_DIR, "harness.db"),
   pidFile: join(DATA_DIR, "mlx.pid"),
+  // SearXNG checkout + venv, made by scripts/setup-searxng.sh.
+  searxDir: process.env.SEARXNG_DIR ?? join(DATA_DIR, "searxng"),
+  searxPort: Number(process.env.SEARXNG_PORT ?? 8888),
+  searxIdleMinutes: Number(process.env.SEARXNG_IDLE_MINUTES ?? 10),
   allowedOrigins: ["tauri://localhost", "http://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
 };

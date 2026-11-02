@@ -118,8 +118,9 @@ How it works now: `server/src/agent/tools.ts` defines tools (name, description, 
 ### M2.1 Loop + calculator — status: done (see git log)
 - Checked live: single call, two chained calls with Think on, plain chat unchanged. tok/s now = the final step only.
 
-### M2.2 Web search (SearXNG) + fetch page — status: todo
-- SearXNG from source with uv, JSON format on, managed like `ModelManager` (lazy start, idle kill). `fetch_page` = HTML → readable text, capped length. Emit `sources` for cited pages.
+### M2.2 Web search + fetch page — status: done (see git log)
+- Chain Tavily → Exa → SearXNG, keys in Keychain, Settings › Tools shows keys/status/counts; trace shows "via". Sources = pages actually fetched (search snippets alone give no chips).
+- Known: given a URL, the 9B model sometimes answers from memory instead of calling fetch_page (1 of 3 after tightening the description). M2.4's eval should measure this.
 
 ### M2.3 read_file in an allowed folder — status: todo
 - Folder set in Settings; refuse paths outside it (resolve symlinks). Emit `sources` with the quoted passage so the source sheet (T3) gets real data.

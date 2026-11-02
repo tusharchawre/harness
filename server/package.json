@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4.13.16"
+    "@mozilla/readability": "^0.6.0",
+    "hono": "^4.13.16",
+    "linkedom": "^0.18.15"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",

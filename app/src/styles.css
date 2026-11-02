@@ -428,6 +428,14 @@ input.tahoe:active::-webkit-slider-thumb { transform: scale(1.12); }
 .ticks span { width: 3px; height: 3px; border-radius: 999px; background: var(--dot); transition: background 200ms ease, transform 200ms ease; }
 .ticks span.on { background: var(--accent); }
 
+/* Settings › Tools: API key fields and per-service search counts. */
+.keyfield { width: 168px; height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background: var(--control); box-shadow: var(--control-edge); font: inherit; font-size: 12px; outline: none; user-select: text; -webkit-user-select: text; }
+.keyfield::placeholder { color: var(--muted); }
+.keyfield:focus { box-shadow: var(--control-edge), 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.link-button { color: var(--accent); font-size: 12px; padding: 0 2px; }
+.remove-slot { width: 52px; margin-left: -4px; }
+.group .count { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }
+.group .sub.err { color: #ff6961; }
 textarea.prompt { width: 100%; padding: 10px 14px; border: 1px solid var(--separator); border-radius: 12px; background: var(--group); line-height: 1.55; resize: vertical; outline: none; user-select: text; -webkit-user-select: text; }
 textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 
