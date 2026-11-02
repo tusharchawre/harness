@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type Memory, type Preset, type SearchBackend, type Settings } from "./api";
+import { api, type FilesAccess, type Memory, type Preset, type SearchBackend, type Settings } from "./api";
 import { Icon, type IconName } from "./icons";
 import { isTauri, pickFolder } from "./native";
 
@@ -142,7 +142,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
                     {pane === "general" && <RuntimeGroup s={s} presets={presets} save={save} />}
                     {pane === "general" && <SystemPrompt value={s.systemPrompt} save={save} />}
                     {(pane === "general" || pane === "memory") && <MemoryList memories={memories} setMemories={setMemories} />}
-                    {pane === "tools" && <FilesFolder value={s.filesFolder} onSaved={(saved) => (setSettings(saved), props.onSaved(saved))} />}
+                    {pane === "tools" && <FilesAccessGroup s={s} onSaved={(saved) => (setSettings(saved), props.onSaved(saved))} />}
                     {pane === "tools" && <SearchBackends />}
                     {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
                   </>
@@ -432,51 +432,68 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
   );
 }
 
-// The one folder list_files / read_file may see. Saved through the server, which checks it exists.
-function FilesFolder({ value, onSaved }: { value: string; onSaved: (s: Settings) => void }) {
-  const [draft, setDraft] = useState(value);
+// What list_files / read_file may see: nothing, one folder, or the whole Mac. Private files
+// (keys, credentials, browser data) always ask first. The server checks the folder exists.
+const ACCESS_OPTIONS: { value: FilesAccess; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "folder", label: "One folder" },
+  { value: "all", label: "Whole Mac" },
+];
+
+function FilesAccessGroup({ s, onSaved }: { s: Settings; onSaved: (s: Settings) => void }) {
+  const [draft, setDraft] = useState(s.filesFolder);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setDraft(value), [value]);
-  const save = (dir: string) => api.saveSettings({ filesFolder: dir }).then((s) => (onSaved(s), setError(null)), (e: Error) => setError(e.message));
-  const choose = () => pickFolder().then((dir) => void (dir && save(dir)));
+  useEffect(() => setDraft(s.filesFolder), [s.filesFolder]);
+  const save = (patch: Partial<Settings>) => api.saveSettings(patch).then((saved) => (onSaved(saved), setError(null)), (e: Error) => setError(e.message));
+  const choose = () => pickFolder().then((dir) => void (dir && save({ filesFolder: dir, filesAccess: "folder" })));
+  const access = s.filesAccess;
+  const sub = { off: "The model can't read your files", folder: "Only the folder below", all: "Any file on this Mac" }[access];
   return (
     <section className="block" aria-label="Files">
       <div className="caption">Files</div>
       <div className="group">
         <div className="row">
           <div className="grow">
-            <div>Shared folder</div>
-            <div className={"sub path" + (error ? " err" : "")} title={value}>
-              {error ?? (value ? value.replace(/^\/Users\/[^/]+/, "~") : "None · the model can't read your files")}
-            </div>
+            <div>File access</div>
+            <div className="sub">{sub}</div>
           </div>
-          {!isTauri && (
-            <input
-              className="keyfield"
-              aria-label="Shared folder path"
-              placeholder="~/Notes"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && draft !== value && save(draft)}
-              onBlur={() => draft !== value && save(draft)}
-              spellCheck={false}
-            />
-          )}
-          {isTauri && (
-            <button className="push-button" onClick={choose}>
-              {value ? "Change…" : "Choose…"}
-            </button>
-          )}
-          <span className="remove-slot">
-            {value && (
-              <button className="link-button" onClick={() => save("")}>
-                Remove
-              </button>
-            )}
-          </span>
+          <Popup
+            label="File access"
+            value={access}
+            options={ACCESS_OPTIONS}
+            // "One folder" with none picked yet opens the picker first.
+            onChange={(v) => (v === "folder" && !s.filesFolder ? (isTauri ? choose() : setError("Type a folder path below")) : save({ filesAccess: v }))}
+          />
         </div>
+        {(access === "folder" || (!isTauri && error)) && (
+          <div className="row">
+            <div className="grow">
+              <div>Folder</div>
+              <div className={"sub path" + (error ? " err" : "")} title={s.filesFolder}>
+                {error ?? (s.filesFolder.replace(/^\/Users\/[^/]+/, "~") || "None")}
+              </div>
+            </div>
+            {isTauri ? (
+              <button className="push-button" onClick={choose}>
+                Change…
+              </button>
+            ) : (
+              <input
+                className="keyfield"
+                aria-label="Folder path"
+                placeholder="~/Notes"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && draft.trim() && save({ filesFolder: draft, filesAccess: "folder" })}
+                spellCheck={false}
+              />
+            )}
+          </div>
+        )}
       </div>
-      <div className="footnote">The model can list and read text files in this folder and its subfolders, nothing outside it. Files it reads show as sources under the reply.</div>
+      <div className="footnote">
+        The model can list and read text files {access === "all" ? "anywhere on this Mac" : "in the folder and its subfolders"}. Private files (SSH keys, cloud credentials, .env, Keychain and browser data) always ask first, and after one is read, web requests in that reply ask too.
+      </div>
     </section>
   );
 }

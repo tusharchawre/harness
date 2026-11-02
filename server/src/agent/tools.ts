@@ -2,6 +2,7 @@
 // format); the chat template turns these into text in the system prompt.
 
 import { listFiles, readFile } from "./files";
+import type { ToolContext } from "./permissions";
 import { fetchPage, webSearch } from "./web";
 
 // A source the answer can cite: shown as a chip under the reply. `path` is a file path or a URL.
@@ -12,7 +13,7 @@ export type Tool = {
   description: string;
   parameters: Record<string, unknown>; // JSON schema of the arguments object
   // Text goes back to the model; sources and via (which service answered) go to the UI.
-  run(args: Record<string, unknown>): Promise<string | { text: string; sources?: Source[]; via?: string }>;
+  run(args: Record<string, unknown>, ctx: ToolContext): Promise<string | { text: string; sources?: Source[]; via?: string }>;
   available?: () => boolean; // false = not offered to the model right now (e.g. not set up)
 };
 

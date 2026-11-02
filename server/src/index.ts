@@ -9,7 +9,8 @@ import { chats, memories, messages, settings, type Chat } from "./db";
 import { setKey } from "./keychain";
 import { clearExhausted, searchStatus } from "./agent/search";
 import { searx } from "./agent/searxng";
-import { filesFolder, insideFolder } from "./agent/files";
+import { filesAccess, filesFolder, isSecret, resolvePath } from "./agent/files";
+import { answer as answerPermission, ask, type ToolContext } from "./agent/permissions";
 import { availableTools, toolSpec, type Source } from "./agent/tools";
 import { OpenAICompatClient, QWEN_SAMPLING, type ChatMessage, type ToolCall } from "./model/client";
 import { ModelManager } from "./model/manager";
@@ -101,7 +102,8 @@ const currentSettings = () => ({
   thinkDefault: settings.get("thinkDefault") === "1",
   systemPrompt: settings.get("systemPrompt") ?? DEFAULT_SYSTEM_PROMPT,
   defaultModel: presetById(settings.get("defaultModel")).id,
-  filesFolder: filesFolder() ?? "", // "" = none: the file tools aren't offered
+  filesAccess: filesAccess(), // off | folder | all; off = the file tools aren't offered
+  filesFolder: filesFolder() ?? "",
 });
 app.get("/api/settings", (c) => c.json(currentSettings()));
 app.put("/api/settings", async (c) => {
@@ -112,7 +114,9 @@ app.put("/api/settings", async (c) => {
     systemPrompt?: string;
     defaultModel?: string;
     filesFolder?: string;
+    filesAccess?: string;
   }>();
+  if (body.filesAccess === "off" || body.filesAccess === "folder" || body.filesAccess === "all") settings.set("filesAccess", body.filesAccess);
   if (typeof body.filesFolder === "string") {
     const dir = body.filesFolder.trim().replace(/^~(?=\/|$)/, homedir());
     if (dir && (!existsSync(dir) || !statSync(dir).isDirectory())) return c.json({ error: "That folder doesn't exist" }, 400);
@@ -168,8 +172,8 @@ app.get("/api/file", async (c) => {
   let path = resolve(c.req.query("path")?.replace(/^~(?=\/)/, homedir()) ?? "");
   let shared = false;
   try {
-    path = insideFolder(path);
-    shared = true;
+    path = resolvePath(path);
+    shared = !isSecret(path); // secrets are only ever read by the model, after a yes
   } catch {}
   if (!shared && (!path.startsWith(homedir() + "/") || !/\.(md|markdown|txt|mdx)$/i.test(path))) return c.json({ error: "not allowed" }, 403);
   const file = Bun.file(path);
@@ -195,7 +199,7 @@ const MAX_STEPS = 6; // model calls per reply; the last one gets no tools
 type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean; via?: string; sources?: Source[] };
 
 // Errors go back to the model as the tool result, so it can fix its arguments and retry.
-async function runTool(call: ToolCall): Promise<ToolStep> {
+async function runTool(call: ToolCall, ctx: ToolContext): Promise<ToolStep> {
   const { id, function: { name, arguments: args } } = call;
   const t0 = performance.now();
   const done = (result: string, error?: boolean) => ({ id, name, args, result, ms: Math.round(performance.now() - t0), ...(error ? { error } : {}) });
@@ -203,7 +207,7 @@ async function runTool(call: ToolCall): Promise<ToolStep> {
   const tool = tools.find((t) => t.name === name);
   if (!tool) return done(`Error: unknown tool "${name}". Available: ${tools.map((t) => t.name).join(", ")}`, true);
   try {
-    const out = await tool.run(args ? JSON.parse(args) : {});
+    const out = await tool.run(args ? JSON.parse(args) : {}, ctx);
     return typeof out === "string" ? done(out) : { ...done(out.text), ...(out.via ? { via: out.via } : {}), sources: out.sources };
   } catch (e) {
     return done(`Error: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -229,10 +233,12 @@ app.post("/api/chats/:id/messages", async (c) => {
   // Only final answers go back into context; past reasoning is dropped.
   // The tool list alone doesn't tell the model that questions about "my trip" or "my notes" live in
   // the shared folder, so say so when one is set.
-  const folder = filesFolder();
+  const access = filesAccess();
+  const where = access === "all" ? "can read files on their Mac (paths relative to their home folder)" : `has shared a folder of their own files (${basename(filesFolder() ?? "")})`;
   const system = [
     currentSettings().systemPrompt.trim(),
-    folder && `The user has shared a folder of their own files (${basename(folder)}). When a question is about their plans, notes, documents or anything personal you don't know, check it with list_files and read_file before answering or asking them.`,
+    access !== "off" &&
+      `The user ${where}. When a question is about their plans, notes, documents, code or anything personal you don't know, check with list_files and read_file before answering or asking them.`,
   ].filter(Boolean).join("\n\n");
   const prompt: ChatMessage[] = [
     ...(system ? [{ role: "system" as const, content: system }] : []),
@@ -249,6 +255,7 @@ app.post("/api/chats/:id/messages", async (c) => {
     let text = "";
     let reasoning = "";
     const trace: ToolStep[] = [];
+    const ctx: ToolContext = { ask: (req) => ask(send, req, abort.signal), secretRead: null };
     const sources: Source[] = []; // pages/files a tool actually read, in order, no repeats
     let usage = { promptTokens: 0, completionTokens: 0 };
     let lastStep = { tokens: 0, firstAt: 0, endAt: 0 }; // decode speed is measured on the final model call
@@ -301,7 +308,7 @@ app.post("/api/chats/:id/messages", async (c) => {
         prompt.push({ role: "assistant", content: stepText, tool_calls: calls });
         for (const call of calls) {
           await send("tool_call", { id: call.id, name: call.function.name, args: call.function.arguments });
-          const ran = await runTool(call);
+          const ran = await runTool(call, ctx);
           const { sources: found, ...step } = ran;
           trace.push(step);
           await send("tool_result", { id: ran.id, result: ran.result, ms: ran.ms, error: ran.error, via: ran.via });
@@ -333,6 +340,12 @@ app.post("/api/chats/:id/messages", async (c) => {
     if (!abort.signal.aborted) await send("done", saved);
     if (placeholder && text) void nameChat(chat.id, placeholder, preset, content, text);
   });
+});
+
+// The UI's answer to a `permission` event.
+app.post("/api/permissions/:id", async (c) => {
+  const { allow } = await c.req.json<{ allow: boolean }>();
+  return answerPermission(c.req.param("id"), !!allow) ? c.json({ ok: true }) : c.json({ error: "no such request" }, 404);
 });
 
 // Web search backends: keys live in the Keychain and are never sent back to the UI.

@@ -124,6 +124,7 @@ How it works now: `server/src/agent/tools.ts` defines tools (name, description, 
 
 ### M2.3 list_files / read_file in a shared folder — status: done (see git log)
 - `agent/files.ts`. Folder picked in Settings › Tools (tauri-plugin-dialog; a text field in the browser). Paths resolved with realpath and refused outside the folder; binaries, >1 MB and folders refused; reads page by `start_line` (12k chars per call). File tools are only offered while a folder is set, and the system prompt then says the folder exists (without that the model asked the user instead of looking).
+- Access is now Off / One folder / Whole Mac (`filesAccess`). Private files (`isSecret` in files.ts: ~/.ssh, cloud CLIs, .env, *.pem, Keychain, browser profiles, Harness's own data) are listed with a tag but read only after an inline yes; after one is read, web_search/fetch_page in that reply ask too (`agent/permissions.ts`, `permission` SSE event → `PermissionCard` in the reply → POST /api/permissions/:id; no answer in 5 min or a stopped reply = deny). The modal PermissionSheet stays for future write tools.
 - Sources = files read, so an unneeded read also shows as a chip. No `quote` yet (sheet opens at the top); RAG (M4) can add cited passages. Source sheet now renders only .md as markdown, other files as plain text.
 
 ### M2.4 Tool-calling eval — status: todo

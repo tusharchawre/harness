@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import { search } from "./search";
+import type { ToolContext } from "./permissions";
 import type { Tool } from "./tools";
 
 const MAX_RESULTS = 6;
@@ -19,9 +20,10 @@ export const webSearch: Tool = {
     properties: { query: { type: "string", description: "Search query, like you would type into a search engine" } },
     required: ["query"],
   },
-  async run(args) {
+  async run(args, ctx) {
     const query = String(args.query ?? "").trim();
     if (!query) throw new Error("query is empty");
+    await confirmSend(ctx, "web_search", query);
     const { results, via } = await search(query, MAX_RESULTS);
     const text = results.length ? results.map((r, i) => `${i + 1}. ${r.title}\n${r.url}\n${(r.content ?? "").trim()}`).join("\n\n") : "No results.";
     return { text, via };
@@ -38,7 +40,8 @@ export const fetchPage: Tool = {
     properties: { url: { type: "string", description: "Full http(s) URL" } },
     required: ["url"],
   },
-  async run(args) {
+  async run(args, ctx) {
+    await confirmSend(ctx, "fetch_page", String(args.url ?? ""));
     const res = await safeFetch(String(args.url ?? ""));
     const type = res.headers.get("content-type") ?? "";
     let title: string | undefined;
@@ -58,6 +61,13 @@ export const fetchPage: Tool = {
     };
   },
 };
+
+// After a secret was read in this reply, anything leaving the Mac (a query or a URL could carry the
+// secret) needs a yes first.
+async function confirmSend(ctx: ToolContext, tool: string, target: string) {
+  if (ctx.secretRead && !(await ctx.ask({ tool, path: target, action: "send", reason: ctx.secretRead })))
+    throw new Error("the user declined this web request because a secret file was read earlier in this reply");
+}
 
 // The model picks the URL, so keep it off this machine and the local network (the Harness API,
 // the model server and SearXNG all listen on localhost). Redirects are followed by hand so each

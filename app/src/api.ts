@@ -2,7 +2,8 @@ export const API = import.meta.env.VITE_API ?? "http://127.0.0.1:8787";
 
 export type ModelStatus = "unloaded" | "loading" | "ready" | "error";
 export type ModelState = { status: ModelStatus; presetId: string | null; label: string | null; error?: string; idleMinutes: number; lastUsed: number | null };
-export type Settings = { idleMinutes: number; thinkingBudget: number; thinkDefault: boolean; systemPrompt: string; defaultModel: string; filesFolder: string };
+export type Settings = { idleMinutes: number; thinkingBudget: number; thinkDefault: boolean; systemPrompt: string; defaultModel: string; filesAccess: FilesAccess; filesFolder: string };
+export type FilesAccess = "off" | "folder" | "all";
 export type Memory = { id: number; text: string; created_at: number };
 export type Preset = { id: string; label: string; model: string; mtp: boolean; info: { size?: string; speed?: string; humaneval?: string } };
 export type Chat = { id: string; title: string; preset: string | null; created_at: number; updated_at: number };
@@ -61,6 +62,7 @@ export const api = {
   settings: () => json<Settings>("/api/settings"),
   saveSettings: (s: Partial<Settings>) => json<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   loadModel: (preset: string) => json<ModelState>("/api/model/load", { method: "POST", body: JSON.stringify({ preset }) }),
+  answerPermission: (id: string, allow: boolean) => json(`/api/permissions/${id}`, { method: "POST", body: JSON.stringify({ allow }) }),
   searchBackends: () => json<SearchBackend[]>("/api/search"),
   saveSearchKeys: (keys: Partial<Record<"tavily" | "exa", string>>) => json<SearchBackend[]>("/api/search/keys", { method: "PUT", body: JSON.stringify(keys) }),
   unloadModel: () => json<ModelState>("/api/model/unload", { method: "POST" }),
@@ -78,6 +80,7 @@ export type SendEvent =
   | { event: "user"; data: Message }
   | { event: "status"; data: { status: string; model?: string } }
   | { event: "reasoning" | "content"; data: { text: string } }
+  | { event: "permission"; data: { id: string; tool: string; path: string; action: "read" | "send"; reason?: string } }
   | { event: "tool_call"; data: { id: string; name: string; args: string } }
   | { event: "tool_result"; data: { id: string; result: string; ms: number; error?: boolean; via?: string } }
   | { event: "sources"; data: Source[] }

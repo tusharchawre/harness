@@ -492,3 +492,13 @@ textarea.prompt:focus { border-color: color-mix(in srgb, var(--accent) 60%, tran
 @media (prefers-reduced-motion: reduce) {
   .perm-sheet, .perm-root.closing .perm-sheet { animation: none; }
 }
+
+/* Inline permission request in a reply (agent waits on it). */
+.perm-card { margin: 8px 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--group); border: 1px solid var(--separator); display: flex; align-items: flex-end; gap: 16px; animation: rowIn 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.perm-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.perm-card-text b { font-weight: 600; }
+.perm-card-text span { font-size: 12px; color: var(--secondary); }
+.perm-card-text code { margin-top: 4px; font-family: var(--mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perm-card-buttons { display: flex; gap: 8px; flex-shrink: 0; }
+.perm-done { margin: 4px 0 10px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .perm-card { animation: none; } }

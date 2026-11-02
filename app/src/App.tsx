@@ -5,6 +5,7 @@ import { Icon } from "./icons";
 import { useFollow } from "./follow";
 import { Markdown } from "./Markdown";
 import { ReplyExtras } from "./Reply";
+import { PermissionCard, type PermissionAsk } from "./PermissionCard";
 import { SourceSheet } from "./SourceSheet";
 import { onMenu, onOpenSettings, openUrl, setModelMenu } from "./native";
 import { isPane, SettingsModal, type Pane } from "./Settings";
@@ -19,6 +20,7 @@ type Draft = {
   status: string;
   tools: ToolStep[];
   sources: Source[];
+  asks: PermissionAsk[]; // inline permission requests, answered or not
   thinkStart: number; // first reasoning chunk (0 = none yet)
   thinkMs: number | null; // reasoning → first answer chunk
 };
@@ -158,7 +160,7 @@ export function App() {
     }
     const ac = new AbortController();
     abortRef.current = ac;
-    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], sources: [], thinkStart: 0, thinkMs: null });
+    setDraft({ chatId: id, thinking, reasoning: "", content: "", status: "sending", tools: [], sources: [], asks: [], thinkStart: 0, thinkMs: null });
     // The user may open another chat mid-reply: only touch the thread while this chat is on screen.
     const here = () => chatIdRef.current === id;
     try {
@@ -169,6 +171,7 @@ export function App() {
         else if (e.event === "content")
           setDraft((d) => d && { ...d, content: d.content + e.data.text, thinkMs: d.thinkMs ?? (d.thinkStart ? performance.now() - d.thinkStart : null) });
         else if (e.event === "sources") setDraft((d) => d && { ...d, sources: e.data });
+        else if (e.event === "permission") setDraft((d) => d && { ...d, asks: [...d.asks, e.data] });
         else if (e.event === "tool_call") setDraft((d) => d && { ...d, tools: [...d.tools, e.data] });
         else if (e.event === "tool_result") setDraft((d) => d && { ...d, tools: d.tools.map((t) => (t.id === e.data.id ? { ...t, ...e.data } : t)) });
         else if (e.event === "done") here() && setMsgs((m) => [...m, e.data]);
@@ -205,6 +208,11 @@ export function App() {
     closeSource();
     inputRef.current?.focus();
   }
+
+  const answerAsk = (id: string, allowed: boolean) => {
+    setDraft((d) => d && { ...d, asks: d.asks.map((a) => (a.id === id ? { ...a, allowed } : a)) });
+    api.answerPermission(id, allowed).catch(() => {});
+  };
 
   const chips = (key: string | number, list: Source[]) =>
     list.length > 0 && (
@@ -318,6 +326,9 @@ export function App() {
                   <div className="meta shimmer">{draft.thinking ? "Thinking…" : "Writing…"}</div>
                 ) : null}
                 <ReplyExtras reasoning={draft.reasoning || null} thinkingMs={draft.thinkMs} tools={draft.tools} thinkingNow={!draft.content} live />
+                {draft.asks.map((a) => (
+                  <PermissionCard key={a.id} ask={a} onAnswer={(allow) => answerAsk(a.id, allow)} />
+                ))}
                 {draft.content && <Markdown text={draft.content} streaming />}
                 {chips("draft", draft.sources)}
               </div>
