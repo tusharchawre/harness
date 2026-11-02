@@ -14,5 +14,6 @@ tauri-build = { version = "2", features = [] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSColor", "NSColorSpace", "objc2-core-foundation"] }
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2", features = ["image-png", "macos-private-api", "tray-icon"] }
+tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 window-vibrancy = "0.8"

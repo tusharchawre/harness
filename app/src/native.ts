@@ -32,6 +32,14 @@ export function openUrl(url: string) {
   else window.open(url, "_blank", "noopener");
 }
 
+// Native folder picker; null when cancelled or outside Tauri (the browser view types a path instead).
+export async function pickFolder(): Promise<string | null> {
+  if (!isTauri) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const dir = await open({ directory: true, multiple: false, title: "Choose a folder to share with Harness" });
+  return typeof dir === "string" ? dir : null;
+}
+
 export function reveal(path: string) {
   if (isTauri) invoke("reveal", { path });
 }

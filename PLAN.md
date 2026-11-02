@@ -122,8 +122,9 @@ How it works now: `server/src/agent/tools.ts` defines tools (name, description, 
 - Chain Tavily → Exa → SearXNG, keys in Keychain, Settings › Tools shows keys/status/counts; trace shows "via". Sources = pages actually fetched (search snippets alone give no chips).
 - Known: given a URL, the 9B model sometimes answers from memory instead of calling fetch_page (1 of 3 after tightening the description). M2.4's eval should measure this.
 
-### M2.3 read_file in an allowed folder — status: todo
-- Folder set in Settings; refuse paths outside it (resolve symlinks). Emit `sources` with the quoted passage so the source sheet (T3) gets real data.
+### M2.3 list_files / read_file in a shared folder — status: done (see git log)
+- `agent/files.ts`. Folder picked in Settings › Tools (tauri-plugin-dialog; a text field in the browser). Paths resolved with realpath and refused outside the folder; binaries, >1 MB and folders refused; reads page by `start_line` (12k chars per call). File tools are only offered while a folder is set, and the system prompt then says the folder exists (without that the model asked the user instead of looking).
+- Sources = files read, so an unneeded read also shows as a chip. No `quote` yet (sheet opens at the top); RAG (M4) can add cited passages. Source sheet now renders only .md as markdown, other files as plain text.
 
 ### M2.4 Tool-calling eval — status: todo
 - ~20 prompts → expected tool + args (and "no tool"), run against each preset, report accuracy.

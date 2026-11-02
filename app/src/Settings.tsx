@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type Memory, type Preset, type SearchBackend, type Settings } from "./api";
 import { Icon, type IconName } from "./icons";
+import { isTauri, pickFolder } from "./native";
 
 export type Pane = "general" | "models" | "tools" | "memory" | "voice";
 
 const PANES: { id: Pane; label: string; icon: IconName; keywords: string }[] = [
   { id: "general", label: "General", icon: "general", keywords: "model idle unload think budget system prompt memory" },
   { id: "models", label: "Models", icon: "models", keywords: "model size speed humaneval qwen mtp" },
-  { id: "tools", label: "Tools", icon: "tools", keywords: "tools permissions files write web search tavily exa searxng api key keychain usage" },
+  { id: "tools", label: "Tools", icon: "tools", keywords: "tools permissions files folder read write web search tavily exa searxng api key keychain usage" },
   { id: "memory", label: "Memory", icon: "memory", keywords: "memory facts" },
   { id: "voice", label: "Voice", icon: "voice", keywords: "voice mic speech" },
 ];
@@ -141,6 +142,7 @@ export function SettingsModal(props: { pane: Pane; closing: boolean; onClose: ()
                     {pane === "general" && <RuntimeGroup s={s} presets={presets} save={save} />}
                     {pane === "general" && <SystemPrompt value={s.systemPrompt} save={save} />}
                     {(pane === "general" || pane === "memory") && <MemoryList memories={memories} setMemories={setMemories} />}
+                    {pane === "tools" && <FilesFolder value={s.filesFolder} onSaved={(saved) => (setSettings(saved), props.onSaved(saved))} />}
                     {pane === "tools" && <SearchBackends />}
                     {pane === "voice" && <Placeholder>Voice input arrives with the voice milestone.</Placeholder>}
                   </>
@@ -426,6 +428,55 @@ function MemoryList({ memories, setMemories }: { memories: Memory[]; setMemories
         </div>
       </div>
       <div className="footnote">Facts saved here are added to chats once memory ships (Milestone 3).</div>
+    </section>
+  );
+}
+
+// The one folder list_files / read_file may see. Saved through the server, which checks it exists.
+function FilesFolder({ value, onSaved }: { value: string; onSaved: (s: Settings) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setDraft(value), [value]);
+  const save = (dir: string) => api.saveSettings({ filesFolder: dir }).then((s) => (onSaved(s), setError(null)), (e: Error) => setError(e.message));
+  const choose = () => pickFolder().then((dir) => void (dir && save(dir)));
+  return (
+    <section className="block" aria-label="Files">
+      <div className="caption">Files</div>
+      <div className="group">
+        <div className="row">
+          <div className="grow">
+            <div>Shared folder</div>
+            <div className={"sub path" + (error ? " err" : "")} title={value}>
+              {error ?? (value ? value.replace(/^\/Users\/[^/]+/, "~") : "None · the model can't read your files")}
+            </div>
+          </div>
+          {!isTauri && (
+            <input
+              className="keyfield"
+              aria-label="Shared folder path"
+              placeholder="~/Notes"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && draft !== value && save(draft)}
+              onBlur={() => draft !== value && save(draft)}
+              spellCheck={false}
+            />
+          )}
+          {isTauri && (
+            <button className="push-button" onClick={choose}>
+              {value ? "Change…" : "Choose…"}
+            </button>
+          )}
+          <span className="remove-slot">
+            {value && (
+              <button className="link-button" onClick={() => save("")}>
+                Remove
+              </button>
+            )}
+          </span>
+        </div>
+      </div>
+      <div className="footnote">The model can list and read text files in this folder and its subfolders, nothing outside it. Files it reads show as sources under the reply.</div>
     </section>
   );
 }

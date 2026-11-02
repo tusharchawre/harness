@@ -12,7 +12,7 @@ const folder = (p: string) => p.slice(0, p.lastIndexOf("/")).replace(/^\/Users\/
 export function SourceSheet({ source, closing, onClose, onClosed }: { source: Source; closing: boolean; onClose: () => void; onClosed: () => void }) {
   const [doc, setDoc] = useState<{ content: string } | { error: string } | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const md = !/\.txt$/i.test(source.path);
+  const md = /\.(md|markdown|mdx)$/i.test(source.path);
 
   useEffect(() => {
     let live = true;

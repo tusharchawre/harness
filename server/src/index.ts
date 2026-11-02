@@ -1,5 +1,6 @@
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -8,7 +9,8 @@ import { chats, memories, messages, settings, type Chat } from "./db";
 import { setKey } from "./keychain";
 import { clearExhausted, searchStatus } from "./agent/search";
 import { searx } from "./agent/searxng";
-import { tools, toolSpec, type Source } from "./agent/tools";
+import { filesFolder, insideFolder } from "./agent/files";
+import { availableTools, toolSpec, type Source } from "./agent/tools";
 import { OpenAICompatClient, QWEN_SAMPLING, type ChatMessage, type ToolCall } from "./model/client";
 import { ModelManager } from "./model/manager";
 
@@ -99,6 +101,7 @@ const currentSettings = () => ({
   thinkDefault: settings.get("thinkDefault") === "1",
   systemPrompt: settings.get("systemPrompt") ?? DEFAULT_SYSTEM_PROMPT,
   defaultModel: presetById(settings.get("defaultModel")).id,
+  filesFolder: filesFolder() ?? "", // "" = none: the file tools aren't offered
 });
 app.get("/api/settings", (c) => c.json(currentSettings()));
 app.put("/api/settings", async (c) => {
@@ -108,7 +111,14 @@ app.put("/api/settings", async (c) => {
     thinkDefault?: boolean;
     systemPrompt?: string;
     defaultModel?: string;
+    filesFolder?: string;
   }>();
+  if (typeof body.filesFolder === "string") {
+    const dir = body.filesFolder.trim().replace(/^~(?=\/|$)/, homedir());
+    if (dir && (!existsSync(dir) || !statSync(dir).isDirectory())) return c.json({ error: "That folder doesn't exist" }, 400);
+    if (dir && resolve(dir) === "/") return c.json({ error: "Pick a folder, not the whole disk" }, 400);
+    settings.set("filesFolder", dir ? resolve(dir) : "");
+  }
   if (body.idleMinutes !== undefined && body.idleMinutes >= 0) {
     manager.idleMinutes = body.idleMinutes;
     settings.set("idleMinutes", String(body.idleMinutes));
@@ -153,10 +163,15 @@ app.delete("/api/chats/:id", (c) => {
 });
 
 // ---- files (source sheet) ----
-// Text files under the home folder only, for previewing cited notes.
+// Notes (.md/.txt) under the home folder, or any file in the shared files folder, for previewing sources.
 app.get("/api/file", async (c) => {
-  const path = resolve(c.req.query("path")?.replace(/^~(?=\/)/, homedir()) ?? "");
-  if (!path.startsWith(homedir() + "/") || !/\.(md|markdown|txt|mdx)$/i.test(path)) return c.json({ error: "not allowed" }, 403);
+  let path = resolve(c.req.query("path")?.replace(/^~(?=\/)/, homedir()) ?? "");
+  let shared = false;
+  try {
+    path = insideFolder(path);
+    shared = true;
+  } catch {}
+  if (!shared && (!path.startsWith(homedir() + "/") || !/\.(md|markdown|txt|mdx)$/i.test(path))) return c.json({ error: "not allowed" }, 403);
   const file = Bun.file(path);
   if (!(await file.exists())) return c.json({ error: "not found" }, 404);
   if (file.size > 2_000_000) return c.json({ error: "too large" }, 413);
@@ -184,6 +199,7 @@ async function runTool(call: ToolCall): Promise<ToolStep> {
   const { id, function: { name, arguments: args } } = call;
   const t0 = performance.now();
   const done = (result: string, error?: boolean) => ({ id, name, args, result, ms: Math.round(performance.now() - t0), ...(error ? { error } : {}) });
+  const tools = availableTools();
   const tool = tools.find((t) => t.name === name);
   if (!tool) return done(`Error: unknown tool "${name}". Available: ${tools.map((t) => t.name).join(", ")}`, true);
   try {
@@ -211,7 +227,13 @@ app.post("/api/chats/:id/messages", async (c) => {
   chats.touch(chat.id);
 
   // Only final answers go back into context; past reasoning is dropped.
-  const system = currentSettings().systemPrompt.trim();
+  // The tool list alone doesn't tell the model that questions about "my trip" or "my notes" live in
+  // the shared folder, so say so when one is set.
+  const folder = filesFolder();
+  const system = [
+    currentSettings().systemPrompt.trim(),
+    folder && `The user has shared a folder of their own files (${basename(folder)}). When a question is about their plans, notes, documents or anything personal you don't know, check it with list_files and read_file before answering or asking them.`,
+  ].filter(Boolean).join("\n\n");
   const prompt: ChatMessage[] = [
     ...(system ? [{ role: "system" as const, content: system }] : []),
     ...[...history, userMsg].map((m) => ({ role: m.role, content: m.content })),
@@ -254,7 +276,7 @@ app.post("/api/chats/:id/messages", async (c) => {
         await manager.use(async () => {
           const req = {
             model: preset.model, messages: prompt, thinking, thinkingBudget: budget, signal: abort.signal,
-            tools: step < MAX_STEPS ? tools.map(toolSpec) : undefined,
+            tools: step < MAX_STEPS ? availableTools().map(toolSpec) : undefined,
           };
           for await (const ev of client.stream(req)) {
             if (ev.type === "usage") {
