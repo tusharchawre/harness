@@ -35,6 +35,11 @@ export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer
         rows={1}
         value={p.value}
         autoFocus
+        // No spell-check underlines, autocorrect, auto-capitals or macOS inline predictive text.
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        {...{ writingsuggestions: "false" }}
         onChange={(e) => p.onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
