@@ -194,6 +194,16 @@ app.delete("/api/memories/:id", (c) => {
   return c.json({ ok: true });
 });
 
+// Arguments with keys sorted, so {"a":1,"b":2} and {"b":2,"a":1} count as the same call.
+const normArgs = (args: string) => {
+  try {
+    const o = JSON.parse(args || "{}");
+    return JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
+  } catch {
+    return args;
+  }
+};
+
 const MAX_STEPS = 6; // model calls per reply; the last one gets no tools
 
 type ToolStep = { id: string; name: string; args: string; result: string; ms: number; error?: boolean; via?: string; sources?: Source[] };
@@ -255,6 +265,7 @@ app.post("/api/chats/:id/messages", async (c) => {
     let text = "";
     let reasoning = "";
     const trace: ToolStep[] = [];
+    const seen = new Map<string, string>(); // tool call (name + args) → result, this reply only
     const ctx: ToolContext = { ask: (req) => ask(send, req, abort.signal), secretRead: null };
     const sources: Source[] = []; // pages/files a tool actually read, in order, no repeats
     let usage = { promptTokens: 0, completionTokens: 0 };
@@ -311,7 +322,14 @@ app.post("/api/chats/:id/messages", async (c) => {
         prompt.push({ role: "assistant", content: stepText, tool_calls: calls });
         for (const call of calls) {
           await send("tool_call", { id: call.id, name: call.function.name, args: call.function.arguments });
-          const ran = await runTool(call, ctx);
+          // The same call again in one reply: small models loop on it. Hand back the earlier result
+          // with a nudge instead of running it again.
+          const key = `${call.function.name}:${normArgs(call.function.arguments)}`;
+          const earlier = seen.get(key);
+          const ran: ToolStep & { sources?: Source[] } = earlier
+            ? { id: call.id, name: call.function.name, args: call.function.arguments, ms: 0, result: `You already made this exact call in this reply. It returned:\n${earlier.slice(0, 1500)}\n\nDon't repeat it: answer from that, or try a different tool, path or search term.` }
+            : await runTool(call, ctx);
+          if (!earlier) seen.set(key, ran.result);
           const { sources: found, ...step } = ran;
           trace.push(step);
           await send("tool_result", { id: ran.id, result: ran.result, ms: ran.ms, error: ran.error, via: ran.via });

@@ -92,7 +92,19 @@ const NOISE = /\/(node_modules|\.git|\.venv|venv|__pycache__|\.next|dist|build|t
 const PRUNE = new Set(["node_modules", "vendor", "__pycache__", "DerivedData", "Pods", "target", "build", "dist"]);
 const PRUNE_EXT = /\.(app|photoslibrary|xcarchive|bundle|framework)$/i;
 const FIND_BUDGET_MS = 8000;
+// "Tushar_invoices" matches "tushar-Invoice Oct.pdf": words split on _ - . and spaces, any order,
+// a trailing plural s ignored.
+const words = (s: string) => s.toLowerCase().split(/[\s_\-.]+/).filter(Boolean).map((w) => (w.length > 3 ? w.replace(/(es|s)$/, "") : w));
+export function nameMatcher(query: string) {
+  const want = words(query);
+  return (name: string) => {
+    const n = name.toLowerCase().replace(/[\s_\-.]+/g, " ");
+    return want.length > 0 && want.every((w) => n.includes(w));
+  };
+}
+
 async function walkFind(root: string, needle: string, skipLibrary: boolean): Promise<string[]> {
+  const match = nameMatcher(needle);
   const hits: string[] = [];
   const deadline = Date.now() + FIND_BUDGET_MS;
   let level = [root];
@@ -110,7 +122,7 @@ async function walkFind(root: string, needle: string, skipLibrary: boolean): Pro
           }
           for (const e of entries) {
             const full = join(dir, e.name);
-            if (e.name.toLowerCase().includes(needle)) hits.push(full);
+            if (match(e.name)) hits.push(full);
             if (!e.isDirectory() || e.name.startsWith(".") || PRUNE.has(e.name) || PRUNE_EXT.test(e.name)) continue;
             if (skipLibrary && full === join(H, "Library")) continue;
             next.push(full);
@@ -150,14 +162,16 @@ export const findFiles: Tool = {
 
 // Inside files: ripgrep if installed, else the system grep. Private files are never searched into.
 const RG = ["/opt/homebrew/bin/rg", "/usr/local/bin/rg"].find((p) => Bun.file(p).size > 0);
-const MAX_MATCHES = 80;
+const MAX_MATCHES = 60;
+const PER_FILE = 3; // so one big project can't use up all the matches
 const GREP_TIMEOUT_MS = 15_000;
 const EXCLUDE_DIRS = ["node_modules", ".git", ".venv", "venv", "__pycache__", ".next", "dist", "build", "target", "Library", ".Trash", ".cache", "DerivedData", "Pods", "vendor", "Music", "Pictures", "Movies", "Applications", "nltk_data", "site-packages", "*.photoslibrary"];
 
 export const grepFiles: Tool = {
   name: "grep_files",
   description:
-    "Search inside text files for a word or phrase (like grep). Returns file:line: text for each match, a few per file. " +
+    "Search for a word or phrase (like grep): lists files and folders whose NAME matches, then matches INSIDE text files " +
+    "(file:line: text, up to 3 per file). PDFs and Word files are only matched by name; read_file reads them. " +
     "Give a folder whenever you can (find_files can locate a project folder first): searching everything is slow and noisy. " +
     "For 'which projects use X', search manifest files, e.g. glob package.json with whole_word. Private files are skipped.",
   parameters: {
@@ -176,12 +190,15 @@ export const grepFiles: Tool = {
     const pattern = String(args.pattern ?? "");
     if (!pattern) throw new Error("pattern is empty");
     const where = resolvePath(String(args.path ?? "."));
+    // People say "grep" for file names too ("grep invoices"), and PDFs/Word files aren't
+    // searchable as text, so names that match come first, found in parallel with the content search.
+    const named = !args.regex && statSync(where).isDirectory() ? walkFind(where, pattern.toLowerCase(), !where.includes("/Library")) : Promise.resolve([]);
     const glob = args.glob ? String(args.glob) : null;
     const smartCase = /[A-Z]/.test(pattern) ? [] : ["-i"];
     const cmd = RG
-      ? [RG, "-n", "--with-filename", "--no-heading", "--color=never", "-m", "5", "-M", "300", "--max-columns-preview", "--max-filesize", "2M", ...smartCase,
+      ? [RG, "-n", "--with-filename", "--no-heading", "--color=never", "-m", String(PER_FILE), "-M", "300", "--max-columns-preview", "--max-filesize", "2M", ...smartCase,
          ...(args.regex ? [] : ["-F"]), ...(args.whole_word ? ["-w"] : []), ...EXCLUDE_DIRS.flatMap((d) => ["-g", `!${d}/`]), ...(glob ? ["-g", glob] : []), "-e", pattern, where]
-      : ["/usr/bin/grep", "-rHInI", "-m", "5", ...smartCase, args.regex ? "-E" : "-F", ...(args.whole_word ? ["-w"] : []), ...EXCLUDE_DIRS.map((d) => `--exclude-dir=${d}`),
+      : ["/usr/bin/grep", "-rHInI", "-m", String(PER_FILE), ...smartCase, args.regex ? "-E" : "-F", ...(args.whole_word ? ["-w"] : []), ...EXCLUDE_DIRS.map((d) => `--exclude-dir=${d}`),
          "--exclude-dir=.*", ...(glob ? [`--include=${glob}`] : []), "-e", pattern, where];
 
     const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" });
@@ -217,8 +234,20 @@ export const grepFiles: Tool = {
       timedOut && `[search stopped after ${GREP_TIMEOUT_MS / 1000} s; give a smaller folder]`,
       hidden && `[${hidden} matches in private files not shown]`,
     ].filter(Boolean);
-    if (!lines.length) return [`No matches for "${pattern}" in ${shown(where)}.`, ...notes].join("\n");
-    return [...lines, ...notes].join("\n");
+    let names = await named;
+    let elsewhere = false;
+    const top = resolvePath(".");
+    if (!names.length && !args.regex && where !== top && filesAccess() === "all") {
+      names = await walkFind(top, pattern, true); // nothing by name in that folder: look everywhere shared
+      elsewhere = names.length > 0;
+    }
+    names = names.sort((a, b) => a.split("/").length - b.split("/").length).slice(0, 15);
+    const nameBlock = names.length
+      ? [`Files and folders named like "${pattern}"${elsewhere ? ` (none in ${shown(where)}; these are elsewhere)` : ""}:`, ...names.map((p) => tagged(p, shown(p))), ""]
+      : [];
+    const files = new Set(lines.map((l) => l.slice(0, l.indexOf(":")))).size;
+    const contentBlock = lines.length ? [`Inside files (${lines.length} matches in ${files} files):`, ...lines] : [`No text matches for "${pattern}" inside files in ${shown(where)}.`];
+    return [...nameBlock, ...contentBlock, ...notes].join("\n");
   },
 };
 
