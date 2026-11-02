@@ -150,7 +150,7 @@ export const grepFiles: Tool = {
     const glob = args.glob ? String(args.glob) : null;
     const smartCase = /[A-Z]/.test(pattern) ? [] : ["-i"];
     const cmd = RG
-      ? [RG, "-n", "--with-filename", "--no-heading", "--color=never", "-m", "5", "-M", "300", "--max-filesize", "2M", ...smartCase,
+      ? [RG, "-n", "--with-filename", "--no-heading", "--color=never", "-m", "5", "-M", "300", "--max-columns-preview", "--max-filesize", "2M", ...smartCase,
          ...(args.regex ? [] : ["-F"]), ...(args.whole_word ? ["-w"] : []), ...EXCLUDE_DIRS.flatMap((d) => ["-g", `!${d}/`]), ...(glob ? ["-g", glob] : []), "-e", pattern, where]
       : ["/usr/bin/grep", "-rHInI", "-m", "5", ...smartCase, args.regex ? "-E" : "-F", ...(args.whole_word ? ["-w"] : []), ...EXCLUDE_DIRS.map((d) => `--exclude-dir=${d}`),
          "--exclude-dir=.*", ...(glob ? [`--include=${glob}`] : []), "-e", pattern, where];
