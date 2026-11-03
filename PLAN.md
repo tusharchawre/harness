@@ -141,6 +141,9 @@ Design (roadmap doc, "Memory design notes"): save/update/delete tools for explic
 - `agent/memory.ts`: `memoryPrompt()` adds "[id] fact" lines (newest first, ~4k chars) to every system prompt. `save_memory` takes a list (one fact each; merged facts got clobbered by updates), `update_memory`/`delete_memory` by id. Secret-looking facts are refused server-side. A `memory` SSE event shows "Saved to memory · Undo" under the reply (`MemoryLine.tsx`; PATCH /api/memories/:id for undoing updates).
 - Loop: if a step after tools comes back empty, one nudge "(Reply to the user now…)" (4B went silent after update_memory).
 
+### M3.1b Core + search instead of all-in-prompt — status: done (see git log)
+- Memories now have `pinned` (core profile, always in the prompt, ~2.5k chars) and `topic`. Everything else is found with `search_memory` (keywords and/or topic; keyword scoring, embeddings in M4). Imported 84 curated facts from the user's Claude export (Claude's memory file + a local-model pass over 211 chats, curated by hand).
+
 ### M3.2 Background extraction — status: todo
 - After a chat goes idle, a 4B pass extracts durable facts the user stated, compares with existing memories, adds/updates/skips.
 

@@ -37,6 +37,11 @@ for (const [col, type] of [["thinking_ms", "INTEGER"], ["tools", "TEXT"], ["sour
 db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 // Facts about the user (Settings › Memory). Used in chats from Milestone 3.
 db.run("CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created_at INTEGER NOT NULL)");
+// pinned = core profile, always in the system prompt; the rest is found with search_memory.
+// topic = one of MEMORY_TOPICS, so the model can pull every fact on a subject.
+for (const [col, type] of [["pinned", "INTEGER NOT NULL DEFAULT 0"], ["topic", "TEXT"]]) {
+  if (!db.query<{ name: string }, []>("PRAGMA table_info(memories)").all().some((c) => c.name === col)) db.run(`ALTER TABLE memories ADD COLUMN ${col} ${type}`);
+}
 
 export type Chat = { id: string; title: string; preset: string | null; created_at: number; updated_at: number };
 export type Message = {
@@ -88,11 +93,12 @@ export const messages = {
   },
 };
 
-export type Memory = { id: number; text: string; created_at: number };
+export type Memory = { id: number; text: string; created_at: number; pinned: number; topic: string | null };
 export const memories = {
   list: () => db.query<Memory, []>("SELECT * FROM memories ORDER BY id DESC").all(),
-  add: (text: string) =>
-    db.query<Memory, [string, number]>("INSERT INTO memories (text, created_at) VALUES (?, ?) RETURNING *").get(text, Date.now())!,
+  add: (text: string, pinned = false, topic: string | null = null) =>
+    db.query<Memory, [string, number, number, string | null]>("INSERT INTO memories (text, created_at, pinned, topic) VALUES (?, ?, ?, ?) RETURNING *").get(text, Date.now(), pinned ? 1 : 0, topic)!,
+  pin: (id: number, pinned: boolean) => db.query("UPDATE memories SET pinned = ? WHERE id = ?").run(pinned ? 1 : 0, id),
   delete: (id: number) => db.query("DELETE FROM memories WHERE id = ?").run(id),
   update: (id: number, text: string) => db.query("UPDATE memories SET text = ? WHERE id = ?").run(text, id),
 };

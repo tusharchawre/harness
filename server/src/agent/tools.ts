@@ -2,7 +2,7 @@
 // format); the chat template turns these into text in the system prompt.
 
 import { findFiles, grepFiles, listFiles, readFile } from "./files";
-import { deleteMemory, saveMemory, updateMemory, type MemoryChange } from "./memory";
+import { deleteMemory, saveMemory, searchMemory, updateMemory, type MemoryChange } from "./memory";
 import type { ToolContext } from "./permissions";
 import { fetchPage, webSearch } from "./web";
 
@@ -42,7 +42,7 @@ const calculator: Tool = {
 };
 
 // Local tools first: small models lean towards the first matching tool, and the web was winning for local questions.
-const allTools: Tool[] = [findFiles, grepFiles, listFiles, readFile, saveMemory, updateMemory, deleteMemory, calculator, webSearch, fetchPage];
+const allTools: Tool[] = [findFiles, grepFiles, listFiles, readFile, searchMemory, saveMemory, updateMemory, deleteMemory, calculator, webSearch, fetchPage];
 export const availableTools = () => allTools.filter((t) => t.available?.() ?? true);
 
 // ---- calculator: a small recursive-descent parser (never eval model output) ----
